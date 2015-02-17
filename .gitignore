@@ -1,0 +1,10 @@
+
+#editor temp files
+*~
+.\#*
+\#*
+
+#my files
+my_*
+
+TAGS

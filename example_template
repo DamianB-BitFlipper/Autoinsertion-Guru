@@ -1,0 +1,5 @@
+# name [test template]
+# hook [SPC]
+# delim [;]
+# expr [[[:digit:]]+$]
+#--
