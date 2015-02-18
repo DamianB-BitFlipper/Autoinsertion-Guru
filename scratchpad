@@ -4,4 +4,5 @@ int main()
 {
   int wow = 10;
   printf("%d\n", 10);
+  return 0;
 }

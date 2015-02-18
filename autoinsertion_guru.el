@@ -1,4 +1,6 @@
 
+(require 'cl-lib)
+
 ;;
 ;; User customizable variables
 ;;
@@ -32,26 +34,11 @@ If on loading, those fields are missing, an error will be signaled")
 ;;
 
 ;;Read the contents of a file as a list of string where each string is a line of the file
-(defun read-lines (filePath)
-  "Return a list of lines of a file at filePath."
+(defun read-lines (file-path)
+  "Return a list of lines of a file at file-path."
   (with-temp-buffer
-    (insert-file-contents filePath)
+    (insert-file-contents file-path)
     (split-string (buffer-string) "\n" t)))
-
-(defun parse-template-file (filePath)
-  (let ((contents (read-lines filePath))
-        (hash-table (make-hash-table :test #'equal)))
-    ;;Each hash should guarantee to have the following fields: name, hook, delim, expr
-    ;; in the rest of the program, so do the error checking here
-    (let ((hash-template (parse-template-file-header contents hash-table)))
-      ;;We only care about the side-effect if it errors, so that is why we use mapc
-      (mapc #'(lambda (key-name) 
-                (if (gethash key-name hash-template nil) ;;returns nil if the key-name does not exist
-                    '()
-                  (error "Parsed template does not include key \"%s\"" key-name))) ;;error if it is not found
-            '("name" "hook" "delim" "expr"))
-      ;;If mapc did not encounter an error, hash-template is valid and can be returned
-      hash-template)))
 
 ;;Parses the header of a template file and saves the parsed values in the hash-table
 ;; Handles errors as needed
@@ -60,7 +47,6 @@ If on loading, those fields are missing, an error will be signaled")
       (error "Missing end identifier to template file header")
     (let ((first (car contents))
           (rest (cdr contents)))
-      
       ;;Error if the regex does not match anything, that means the header was poorly formed
       (cond 
           ((string-match "^#\\s-*\\([[:alpha:]]*\\)\\s-*\\[\\(.*\\)\\]\\s-*$" first) ;;key value pair matching
@@ -74,23 +60,76 @@ If on loading, those fields are missing, an error will be signaled")
           (t ;;Else, there must be an error
            (error "Invalid syntax on line: \"%s\"" first))))))
 
-;;TODO: make it find all directories in root-dir and recurse all templates inside of them and load them
-(defun load-templates-recurse-dir (root-dir)
+(defun parse-template-file (template-file-path)
+  "Given a template file path, this function parses it"
+  (let ((contents (read-lines template-file-path))
+        (hash-table (make-hash-table :test #'equal)))
+    ;;Each hash should guarantee to have the following fields: name, hook, delim, expr
+    ;; in the rest of the program, so do the error checking here
+    (let ((hash-template (parse-template-file-header contents hash-table)))
+      ;;We only care about the side-effect if it errors, so that is why we use mapc
+      (mapc #'(lambda (key-name) 
+                (if (gethash key-name hash-template nil) ;;returns nil if the key-name does not exist
+                    '()
+                  (error "Parsed template does not include key \"%s\"" key-name))) ;;error if it is not found
+            '("name" "hook" "delim" "expr"))
+      ;;If mapc did not encounter an error, hash-template is valid and can be returned
+      hash-template)))
 
-  )
+(defun load-template-file (mode template-file-path)
+  "Loads a template file into a given mode"
+  ;;Get what is in mode, defaulting to '() if there is nothing
+  ;; and append the parsed data to that list and place it back into the hash table
+  (let ((mode-contents (gethash mode hash-templates-by-mode '())))
+    (puthash mode (cons (parse-template-file template-file-path) mode-contents)
+             hash-templates-by-mode)))
 
-;;Loads all template files
-(defun load-template-files (mode template-file-loc)
+(defun get-mode-dirs (root-dir)
+  "Gets all of the directories in root-dir that end in -mode"
+  ;;root-contents is a list of files and directories ending in -mode with its full path
+  ;; they are then later filtered to only directories by the attributes
+  (let ((root-contents (directory-files-and-attributes root-dir t "-mode$" t)))
+    ;;Filter so that only the directories are left from root-contents
+    (cl-reduce #'(lambda (acc x) 
+                   (if (cadr x)
+                       (cons (car x) acc)
+                     acc))
+               root-contents
+               :initial-value '())))
+
+(defun get-template-files (mode-dir)
+  "Given a directory mode-dir, returns all of the files in it
+It is assumed every file in mode-dir is a template file"
+  (let ((templates (directory-files-and-attributes mode-dir t nil t)))
+    ;;Filter so that only the files are left from templates
+    (cl-reduce #'(lambda (acc x) 
+                   (if (not (cadr x))
+                       (cons (car x) acc)
+                     acc))
+               templates
+               :initial-value '())))
+
+(defun load-templates-from-root-dir (root-dir)
+  "Loads all of the template files located in the sub-mode dirs of root-dir
+root-dir is expected to be an existing directory of all of the sub-mode dirs"
   ;;Clear the hash table every time the load function is called
   (clrhash hash-templates-by-mode)
 
-  ;;TODO: make this the way it is actually supposed to be
-  ;;Get what is in c-mode, defaulting to '() if there is nothing
-  ;; and append the parsed data to that list back into the hash table
-  (let ((mode-contents (gethash mode hash-templates-by-mode '())))
-    (puthash mode
-             (cons (parse-template-file template-file-loc) mode-contents)
-             hash-templates-by-mode)))
+  ;;mode-dirs is a list of the full paths of directories containing templates
+  (let ((mode-dirs (get-mode-dirs root-dir)))
+    (mapc #'(lambda (mode-dir) 
+              "mode-dir is the full directory path of each sub-directory in 
+root-dir that will contain template files"
+              ;;template-files is a list of all of the templates with a full path found in mode-dir
+              ;;mode is the mode each template file is to be activated in which is
+              ;; the directory name of mode-dir without the full path
+              ;; it is extracted by spliting the mode-dir about /, taking the last one via (car (last ...))
+              (let ((template-files (get-template-files mode-dir))
+                    (mode (car (last (split-string mode-dir "/")))))
+                (mapc #'(lambda (template-file-path)
+                          (load-template-file mode template-file-path))
+                      template-files)))
+          mode-dirs)))
 
 ;;Gets the region of the buffer that is between the regex start-delim and point
 ;; if start-delim is not satisfied, the beginning of the buffer is used
@@ -110,21 +149,23 @@ If on loading, those fields are missing, an error will be signaled")
 
 (defun aig-update-context ()
   (interactive)
-  ;TODO: Make this get the value by major mode variable
-  (let ((templatesLs (gethash "c-mode" hash-templates-by-mode)))
-    (mapcar #'(lambda (hash-template)
-                (let ((search-area (aig-get-search-region (gethash "delim" hash-template))))
-                  (if (string-match (gethash "expr" hash-template) search-area)
-                      (message "good here")
-                    (message "not so good here"))
+  ;;templates-ls is the list of templates for the current major-mode, '() if there are none
+  (let ((templates-ls (gethash (symbol-name major-mode) hash-templates-by-mode '())))
+    (mapc #'(lambda (hash-template)
+             (let ((search-area (aig-get-search-region (gethash "delim" hash-template))))
+               (if (string-match (gethash "expr" hash-template) search-area)
+                   (message "good here")
+                 (message "not so good here"))
 
-                  )) templatesLs))
+               )) templates-ls))
   )
+
+(load-templates-from-root-dir "/home/damian/bin/ELisp_files/autoinsertion_guru/")
 
 ;(let ((search-area (buffer-substring start-point end-point)))
 ;      (message "%s" (string-match ".*[[:digit:]]+$" search-area)))))
 
-(load-template-files "c-mode" "~/bin/ELisp_files/autoinsertion_guru/fundamental-mode/basic-template")
+;(load-template-files "c-mode" "~/bin/ELisp_files/autoinsertion_guru/fundamental-mode/basic-template")
 
 ;;This works for all
 ;;(add-hook 'pre-command-hook #'(lambda () (message "%s\n" last-input-event)))
