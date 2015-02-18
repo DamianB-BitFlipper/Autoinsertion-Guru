@@ -22,7 +22,11 @@
 ;;
 (defvar hash-templates-by-mode (make-hash-table :test #'equal)
   "A hash table that holds a list of hash tables of loaded 
-templates for each respective mode identified by the key")
+templates for each respective mode identified by the key
+
+Each hash table element in each of the lists contained in this hash table is
+guaranteed to have the following fields: name, hook, delim, expr
+If on loading, those fields are missing, an error will be signaled")
 ;;
 ;; Global variables
 ;;
@@ -37,7 +41,17 @@ templates for each respective mode identified by the key")
 (defun parse-template-file (filePath)
   (let ((contents (read-lines filePath))
         (hash-table (make-hash-table :test #'equal)))
-    (parse-template-file-header contents hash-table)))
+    ;;Each hash should guarantee to have the following fields: name, hook, delim, expr
+    ;; in the rest of the program, so do the error checking here
+    (let ((hash-template (parse-template-file-header contents hash-table)))
+      ;;We only care about the side-effect if it errors, so that is why we use mapc
+      (mapc #'(lambda (key-name) 
+                (if (gethash key-name hash-template nil) ;;returns nil if the key-name does not exist
+                    '()
+                  (error "Parsed template does not include key \"%s\"" key-name))) ;;error if it is not found
+            '("name" "hook" "delim" "expr"))
+      ;;If mapc did not encounter an error, hash-template is valid and can be returned
+      hash-template)))
 
 ;;Parses the header of a template file and saves the parsed values in the hash-table
 ;; Handles errors as needed
@@ -60,36 +74,58 @@ templates for each respective mode identified by the key")
           (t ;;Else, there must be an error
            (error "Invalid syntax on line: \"%s\"" first))))))
 
+;;TODO: make it find all directories in root-dir and recurse all templates inside of them and load them
+(defun load-templates-recurse-dir (root-dir)
+
+  )
+
 ;;Loads all template files
-(defun load-template-files ()
+(defun load-template-files (mode template-file-loc)
   ;;Clear the hash table every time the load function is called
   (clrhash hash-templates-by-mode)
 
   ;;TODO: make this the way it is actually supposed to be
-  ;; Get what is in c-mode, defaulting to '() if there is nothing
+  ;;Get what is in c-mode, defaulting to '() if there is nothing
   ;; and append the parsed data to that list back into the hash table
-  (let ((mode-contents (gethash "c-mode" hash-templates-by-mode '())))
-    (puthash "c-mode" 
-             (cons (parse-template-file "~/bin/ELisp_files/autoinsertion_guru/example_template") mode-contents)
+  (let ((mode-contents (gethash mode hash-templates-by-mode '())))
+    (puthash mode
+             (cons (parse-template-file template-file-loc) mode-contents)
              hash-templates-by-mode)))
 
-(defun aig-get-search-region (start-expr)
-  (interactive "sExpr: ") ;;ask for an regexpr to look back on
-
+;;Gets the region of the buffer that is between the regex start-delim and point
+;; if start-delim is not satisfied, the beginning of the buffer is used
+(defun aig-get-search-region (start-delim)
   ;;make it a special let because point moves around when calling re-search-backward
   (let* ((end-point (point))
-         (start-point (if (re-search-backward (concat "\\(" start-expr "\\)") nil t) ;;non-nil means matched
+         (start-point (if (re-search-backward (concat "\\(" start-delim "\\)") nil t) ;;non-nil means matched
                           (match-end 1) ;;The end of the match
                         ;;No match means that everything before the point was exhausted, 
-                        ;; so use the beginning of the file
+                        ;; so use the beginning of the buffer
                         1)))
     ;;move point to its original position
     (goto-char end-point)
 
-    ;;search-area is everything back up to but not including the start-expr
-    (let ((search-area (buffer-substring start-point end-point)))
-      (message "%s" (string-match ".*[[:digit:]]+$" search-area)))))
+    ;;Return the search area
+    (buffer-substring start-point end-point)))
 
-(message "%s" (parse-template-file "~/bin/ELisp_files/autoinsertion_guru/example_template"))
-(load-template-files)
-(gethash "name" (car (gethash "c-mode" hash-templates-by-mode)))
+(defun aig-update-context ()
+  (interactive)
+  ;TODO: Make this get the value by major mode variable
+  (let ((templatesLs (gethash "c-mode" hash-templates-by-mode)))
+    (mapcar #'(lambda (hash-template)
+                (let ((search-area (aig-get-search-region (gethash "delim" hash-template))))
+                  (if (string-match (gethash "expr" hash-template) search-area)
+                      (message "good here")
+                    (message "not so good here"))
+
+                  )) templatesLs))
+  )
+
+;(let ((search-area (buffer-substring start-point end-point)))
+;      (message "%s" (string-match ".*[[:digit:]]+$" search-area)))))
+
+(load-template-files "c-mode" "~/bin/ELisp_files/autoinsertion_guru/fundamental-mode/basic-template")
+
+;;This works for all
+;;(add-hook 'pre-command-hook #'(lambda () (message "%s\n" last-input-event)))
+
