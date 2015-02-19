@@ -3,5 +3,4 @@
 # delim [;]
 # expr [[[:digit:]]+\s-*-$]
 #--
-;(message "Hooked exec")
-;# hook-back-expr [->]
+(message "Hooked exec")

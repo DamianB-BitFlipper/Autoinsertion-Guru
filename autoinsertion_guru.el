@@ -73,7 +73,7 @@ This variable is updated every time the context is updated")
   "Given a template file path, this function parses it"
   (let ((contents (read-lines template-file-path))
         (hash-table (make-hash-table :test #'equal)))
-    ;;Each hash should guarantee to have the following fields: name, hook, delim, expr
+    ;;Each hash should guarantee to have the following fields: name, hook, delim, expr, exec
     ;; in the rest of the program, so do the error checking here
     (let* ((pair (parse-template-file-header contents hash-table))
            (hash-template (car pair))
@@ -87,7 +87,7 @@ This variable is updated every time the context is updated")
                 (if (gethash key-name hash-template nil) ;;returns nil if the key-name does not exist
                     '()
                   (error "Parsed template does not include key \"%s\"" key-name))) ;;error if it is not found
-            '("name" "hook" "delim" "expr"))
+            '("name" "hook" "delim" "expr" "exec"))
       ;;If mapc did not encounter an error, hash-template is valid and can be returned
       hash-template)))
 
@@ -193,16 +193,6 @@ If start-delim is not satisfied, the beginning of the buffer is used"
     (= last-input-event (string-to-char hook)))
    (t (error "Unknown input event %s" last-input-event))))
 
-(defun hook-back-expr-matches (context-hash)
-  "Checks if the hook-back-expr is valid for when looking-back, defaulting to t if 
-the hook-back-expr was left out. The context-hash is the entire hash that had a satisfied hook"
-  (let ((back-expr (gethash "hook-back-expr" context-hash nil)))
-    ;;If there was no hook-back-expr supplied, return t
-    ;; else look back with a limit of 20 characters back
-    (if (not back-expr)
-        t
-      (looking-back back-expr (- (point) 20)))))
-
 (defun aig-scan-context (context-hashes)
   "Scans the context to see if an hooks are satisfied, hooked on post-command-hook"
   (if (null context-hashes)
@@ -210,45 +200,34 @@ the hook-back-expr was left out. The context-hash is the entire hash that had a 
     (let ((first (car context-hashes))
           (rest (cdr context-hashes)))
 
-      ;(message "%s" (hook-matches-last-input-event (gethash "hook" first)))
-      (message "TEST")
-
-      ;;first check if the hook matched, then if the hook-back-expr matched
-      (if (and (hook-matches-last-input-event (gethash "hook" first))
-               (hook-back-expr-matches first))
+      ;;check if the hook matched
+      (if (hook-matches-last-input-event (gethash "hook" first))
           (cons first (aig-scan-context rest)) ;;cons the matched context template and continue the recursion
           (aig-scan-context rest)) ;;continue the recursion 
+      )))
 
-
-      ;;if the hook is directly before the point
-      ;; setting the search back limit to 20 characters before the point
-      ;; (if (= last-input-event )
-
-      ;;     (looking-back hook (- (point) 20))
-      ;;     (gethash "exec" first) ;;return the exec code if a hook was satisfied
-      ;;     (aig-scan-context rest))
-
-      ))) ;;continue the recursion
+(defun eval-hash-template (hash-template)
+  (let ((exec-str (gethash "exec" hash-template)))
+    (eval (read exec-str))))
 
 (defun aig-post-command-hook-handle ()
-  (let ((scanned-context (aig-scan-context list-context-hash-templates)))
-    (if scanned-context
-        (message "%s" scanned-context)
-        ;(eval (read scanned-context))
-      nil))
+  (let* ((scanned-contexts (aig-scan-context list-context-hash-templates))
+         (contexts-len (length scanned-contexts)))
 
+    ;;handles if there was a match
+    (cond
+     ((zerop contexts-len) nil) ;;no matches
+     ((= 1 contexts-len) (eval-hash-template (car scanned-contexts))) ;;single match, execute it
+     ;TODO: make the prompting
+     (t (message "Multiple matches found:")) ;;more than one match, prompt for which one to use
+     ))
+
+  ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context)
   )
 
 (add-hook 'post-command-hook #'aig-post-command-hook-handle)
 (remove-hook 'post-command-hook #'aig-post-command-hook-handle)
-
-(add-hook 'post-command-hook #'aig-update-context)
-(remove-hook 'post-command-hook #'aig-update-context)
-
-(add-hook 'post-command-hook #'aig-scan-context)
-(remove-hook 'post-command-hook #'aig-scan-context)
-
 
 (load-templates-from-root-dir "/home/damian/bin/ELisp_files/autoinsertion_guru/")
 
