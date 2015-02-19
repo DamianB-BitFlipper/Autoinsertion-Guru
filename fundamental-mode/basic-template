@@ -1,5 +1,7 @@
 # name [test template]
-# hook [+]
+# hook [>]
 # delim [;]
-# expr [[[:digit:]]+\s-*$]
+# expr [[[:digit:]]+\s-*-$]
 #--
+;(message "Hooked exec")
+;# hook-back-expr [->]

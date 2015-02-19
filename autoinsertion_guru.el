@@ -15,6 +15,8 @@
   :group 'autoinsertion-guru
   :require 'autoinsertion-guru)
 
+;TODO: make the -20 char look-back on scan hooks a custom variable
+
 ;;
 ;; User customizable variables
 ;;
@@ -54,7 +56,9 @@ This variable is updated every time the context is updated")
           (rest (cdr contents)))
       ;;Error if the regex does not match anything, that means the header was poorly formed
       (cond 
-          ((string-match "^#\\s-*\\([[:alpha:]]*\\)\\s-*\\[\\(.*\\)\\]\\s-*$" first) ;;key value pair matching
+          ((string-match 
+            ;;matches ^#<whitespace>*<non-whitespace>+<whitespace>+\[<anything>*\]<whitespace>$
+            "^#\\s-*\\(\\S-+\\)\\s-+\\[\\(.*\\)\\]\\s-*$" first) ;;key value pair matching
            ;;Add entry to the hash-table and recurse
            (progn
              ;;The first match is the key and the second match is the value
@@ -75,7 +79,8 @@ This variable is updated every time the context is updated")
            (hash-template (car pair))
            (rest-contents (cdr pair)))
       ;;concatenate rest-contents and insert it into the hash-template under the key: exec
-      (puthash "exec" (mapconcat 'identity rest-contents "") hash-template)
+      ;; make sure to wrap the rest contents in a progn to be able to evaluate it as one big sexp
+      (puthash "exec" (mapconcat 'identity (append '("(progn ") rest-contents '(")")) "") hash-template)
 
       ;;We only care about the side-effect if it errors, so that is why we use mapc
       (mapc #'(lambda (key-name) 
@@ -179,23 +184,59 @@ If start-delim is not satisfied, the beginning of the buffer is used"
                  nil)))
           templates-ls)))
 
+(defun hook-matches-last-input-event (hook)
+  "Returns t if the last-input-event matches the hook, else it returns nil"
+  (cond
+   ((symbolp last-input-event)
+    (equal (symbol-name last-input-event) hook))
+   ((numberp last-input-event)
+    (= last-input-event (string-to-char hook)))
+   (t (error "Unknown input event %s" last-input-event))))
+
+(defun hook-back-expr-matches (context-hash)
+  "Checks if the hook-back-expr is valid for when looking-back, defaulting to t if 
+the hook-back-expr was left out. The context-hash is the entire hash that had a satisfied hook"
+  (let ((back-expr (gethash "hook-back-expr" context-hash nil)))
+    ;;If there was no hook-back-expr supplied, return t
+    ;; else look back with a limit of 20 characters back
+    (if (not back-expr)
+        t
+      (looking-back back-expr (- (point) 20)))))
+
 (defun aig-scan-context (context-hashes)
   "Scans the context to see if an hooks are satisfied, hooked on post-command-hook"
   (if (null context-hashes)
-      nil ;;return nil if context-hashes is null
-    (let* ((first (car context-hashes))
-           (rest (cdr context-hashes))
-           (hook (gethash "hook" first)))
+      '() ;;base case, return '() if context-hashes list is empty
+    (let ((first (car context-hashes))
+          (rest (cdr context-hashes)))
+
+      ;(message "%s" (hook-matches-last-input-event (gethash "hook" first)))
+      (message "TEST")
+
+      ;;first check if the hook matched, then if the hook-back-expr matched
+      (if (and (hook-matches-last-input-event (gethash "hook" first))
+               (hook-back-expr-matches first))
+          (cons first (aig-scan-context rest)) ;;cons the matched context template and continue the recursion
+          (aig-scan-context rest)) ;;continue the recursion 
+
+
       ;;if the hook is directly before the point
-      ;; setting the search back limit to 30 characters before the point
-      (if (looking-back hook (- (point) 30))
-          t ;;return t if a hook was satisfied
-          (aig-scan-context rest))))) ;;continue the recursion
+      ;; setting the search back limit to 20 characters before the point
+      ;; (if (= last-input-event )
+
+      ;;     (looking-back hook (- (point) 20))
+      ;;     (gethash "exec" first) ;;return the exec code if a hook was satisfied
+      ;;     (aig-scan-context rest))
+
+      ))) ;;continue the recursion
 
 (defun aig-post-command-hook-handle ()
-  (if (aig-scan-context list-context-hash-templates)
-      (message "hooked")
-    nil)
+  (let ((scanned-context (aig-scan-context list-context-hash-templates)))
+    (if scanned-context
+        (message "%s" scanned-context)
+        ;(eval (read scanned-context))
+      nil))
+
   (aig-update-context)
   )
 
