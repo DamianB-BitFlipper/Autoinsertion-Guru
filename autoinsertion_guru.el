@@ -29,6 +29,11 @@ templates for each respective mode identified by the key
 Each hash table element in each of the lists contained in this hash table is
 guaranteed to have the following fields: name, hook, delim, expr
 If on loading, those fields are missing, an error will be signaled")
+
+(defvar list-context-hash-templates '() 
+  "A list of hashes of templates that are enabled in the current context
+This variable is updated every time the context is updated")
+
 ;;
 ;; Global variables
 ;;
@@ -56,7 +61,7 @@ If on loading, those fields are missing, an error will be signaled")
              (puthash (match-string 1 first) (match-string 2 first) hash-table)
              (parse-template-file-header rest hash-table)))
           ((string-match "^#\\s-*--\\s-*$" first) ;;end identifier matching
-           hash-table) ;;Return the hash table when done
+           (cons hash-table rest)) ;;Return the hash table and the rest of the file's contents when done
           (t ;;Else, there must be an error
            (error "Invalid syntax on line: \"%s\"" first))))))
 
@@ -66,7 +71,12 @@ If on loading, those fields are missing, an error will be signaled")
         (hash-table (make-hash-table :test #'equal)))
     ;;Each hash should guarantee to have the following fields: name, hook, delim, expr
     ;; in the rest of the program, so do the error checking here
-    (let ((hash-template (parse-template-file-header contents hash-table)))
+    (let* ((pair (parse-template-file-header contents hash-table))
+           (hash-template (car pair))
+           (rest-contents (cdr pair)))
+      ;;concatenate rest-contents and insert it into the hash-template under the key: exec
+      (puthash "exec" (mapconcat 'identity rest-contents "") hash-template)
+
       ;;We only care about the side-effect if it errors, so that is why we use mapc
       (mapc #'(lambda (key-name) 
                 (if (gethash key-name hash-template nil) ;;returns nil if the key-name does not exist
@@ -131,9 +141,14 @@ root-dir that will contain template files"
                       template-files)))
           mode-dirs)))
 
-;;Gets the region of the buffer that is between the regex start-delim and point
-;; if start-delim is not satisfied, the beginning of the buffer is used
+(defun get-templates-for-major-mode ()
+  "Returns the list of template hash tables corresponding to the respective
+value in major-mode. Returns '() if there are no templates"
+  (gethash (symbol-name major-mode) hash-templates-by-mode '()))
+
 (defun aig-get-search-region (start-delim)
+  "Gets the region of the buffer that is between the regex start-delim and point.
+If start-delim is not satisfied, the beginning of the buffer is used"
   ;;make it a special let because point moves around when calling re-search-backward
   (let* ((end-point (point))
          (start-point (if (re-search-backward (concat "\\(" start-delim "\\)") nil t) ;;non-nil means matched
@@ -148,17 +163,51 @@ root-dir that will contain template files"
     (buffer-substring start-point end-point)))
 
 (defun aig-update-context ()
-  (interactive)
+  "Updates the context list, hooked on post-command-hook"
+  
+  ;;clear the current context by setting list-context-hash-templates to '()
+  (setq list-context-hash-templates '())
+
   ;;templates-ls is the list of templates for the current major-mode, '() if there are none
-  (let ((templates-ls (gethash (symbol-name major-mode) hash-templates-by-mode '())))
+  (let ((templates-ls (get-templates-for-major-mode)))
     (mapc #'(lambda (hash-template)
              (let ((search-area (aig-get-search-region (gethash "delim" hash-template))))
+               ;;Destructive cons the hash-template if expr matches the context search-area
+               ;; else do nothing
                (if (string-match (gethash "expr" hash-template) search-area)
-                   (message "good here")
-                 (message "not so good here"))
+                   (push hash-template list-context-hash-templates)
+                 nil)))
+          templates-ls)))
 
-               )) templates-ls))
+(defun aig-scan-context (context-hashes)
+  "Scans the context to see if an hooks are satisfied, hooked on post-command-hook"
+  (if (null context-hashes)
+      nil ;;return nil if context-hashes is null
+    (let* ((first (car context-hashes))
+           (rest (cdr context-hashes))
+           (hook (gethash "hook" first)))
+      ;;if the hook is directly before the point
+      ;; setting the search back limit to 30 characters before the point
+      (if (looking-back hook (- (point) 30))
+          t ;;return t if a hook was satisfied
+          (aig-scan-context rest))))) ;;continue the recursion
+
+(defun aig-post-command-hook-handle ()
+  (if (aig-scan-context list-context-hash-templates)
+      (message "hooked")
+    nil)
+  (aig-update-context)
   )
+
+(add-hook 'post-command-hook #'aig-post-command-hook-handle)
+(remove-hook 'post-command-hook #'aig-post-command-hook-handle)
+
+(add-hook 'post-command-hook #'aig-update-context)
+(remove-hook 'post-command-hook #'aig-update-context)
+
+(add-hook 'post-command-hook #'aig-scan-context)
+(remove-hook 'post-command-hook #'aig-scan-context)
+
 
 (load-templates-from-root-dir "/home/damian/bin/ELisp_files/autoinsertion_guru/")
 
