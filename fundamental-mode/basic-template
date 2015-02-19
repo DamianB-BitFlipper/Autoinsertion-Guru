@@ -1,6 +1,9 @@
 # name [test template]
+# [this is a comment]
 # hook [>]
 # delim [;]
 # expr [[[:digit:]]+\s-*-$]
 #--
+(delete-backward-char 2) ;;delete the hook ->
+(insert " -> ")
 (message "Hooked exec")

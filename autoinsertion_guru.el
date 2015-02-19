@@ -22,9 +22,18 @@
 ;;
 
 ;;
+;; Initialization
+;;
+;;make a hash table test named string= using string=
+(define-hash-table-test 'string= 'string= 'sxhash)
+;;
+;; Initialization
+;;
+
+;;
 ;; Global variables
 ;;
-(defvar hash-templates-by-mode (make-hash-table :test #'equal)
+(defvar hash-templates-by-mode (make-hash-table :test 'string=)
   "A hash table that holds a list of hash tables of loaded 
 templates for each respective mode identified by the key
 
@@ -57,13 +66,21 @@ This variable is updated every time the context is updated")
       ;;Error if the regex does not match anything, that means the header was poorly formed
       (cond 
           ((string-match 
-            ;;matches ^#<whitespace>*<non-whitespace>+<whitespace>+\[<anything>*\]<whitespace>$
-            "^#\\s-*\\(\\S-+\\)\\s-+\\[\\(.*\\)\\]\\s-*$" first) ;;key value pair matching
+            ;;matches ^#<whitespace>*<non-whitespace>*<whitespace>+\[<anything>*\]<whitespace>$
+            "^#\\s-*\\(\\S-*\\)\\s-+\\[\\(.*\\)\\]\\s-*$" first) ;;key value pair matching
            ;;Add entry to the hash-table and recurse
            (progn
              ;;The first match is the key and the second match is the value
-             (puthash (match-string 1 first) (match-string 2 first) hash-table)
-             (parse-template-file-header rest hash-table)))
+             (let ((key (match-string 1 first))
+                   (val (match-string 2 first)))
+               
+               ;;If the first match is an empty string, ie: no non-whitespace characters
+               ;; were found, then that line is interpreted as a comment line and is ignored
+               (if (zerop (length key))
+                   nil ;;do nothing
+                 (puthash key val hash-table))
+
+               (parse-template-file-header rest hash-table))))
           ((string-match "^#\\s-*--\\s-*$" first) ;;end identifier matching
            (cons hash-table rest)) ;;Return the hash table and the rest of the file's contents when done
           (t ;;Else, there must be an error
@@ -72,15 +89,17 @@ This variable is updated every time the context is updated")
 (defun parse-template-file (template-file-path)
   "Given a template file path, this function parses it"
   (let ((contents (read-lines template-file-path))
-        (hash-table (make-hash-table :test #'equal)))
+        (hash-table (make-hash-table :test 'string=)))
     ;;Each hash should guarantee to have the following fields: name, hook, delim, expr, exec
     ;; in the rest of the program, so do the error checking here
     (let* ((pair (parse-template-file-header contents hash-table))
            (hash-template (car pair))
            (rest-contents (cdr pair)))
-      ;;concatenate rest-contents and insert it into the hash-template under the key: exec
+      ;;concatenate rest-contents with newlines after each
+      ;; statement so that comments don't comment more than wanted
+      ;; and insert it into the hash-template under the key: exec
       ;; make sure to wrap the rest contents in a progn to be able to evaluate it as one big sexp
-      (puthash "exec" (mapconcat 'identity (append '("(progn ") rest-contents '(")")) "") hash-template)
+      (puthash "exec" (mapconcat 'identity (append '("(progn ") rest-contents '(")")) "\n") hash-template)
 
       ;;We only care about the side-effect if it errors, so that is why we use mapc
       (mapc #'(lambda (key-name) 
@@ -188,7 +207,7 @@ If start-delim is not satisfied, the beginning of the buffer is used"
   "Returns t if the last-input-event matches the hook, else it returns nil"
   (cond
    ((symbolp last-input-event)
-    (equal (symbol-name last-input-event) hook))
+    (string= (symbol-name last-input-event) hook))
    ((numberp last-input-event)
     (= last-input-event (string-to-char hook)))
    (t (error "Unknown input event %s" last-input-event))))
@@ -225,6 +244,9 @@ If start-delim is not satisfied, the beginning of the buffer is used"
   ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context)
   )
+
+;(char-to-string 32)
+;(read-event)
 
 (add-hook 'post-command-hook #'aig-post-command-hook-handle)
 (remove-hook 'post-command-hook #'aig-post-command-hook-handle)
