@@ -10,24 +10,22 @@
 
 (defcustom aig-template-dirs (list "~/.emacs.d/aig-templates")
   "The directories where aig templates are search for in."
-  :type '(choice (string :tag "Single directory (string)")
-                 (repeat :args (string) :tag "List of directories (strings)"))
-  :group 'autoinsertion-guru
-  :require 'autoinsertion-guru)
-
-;TODO: make the -20 char look-back on scan hooks a custom variable
-
+  :type (repeat :args (directory) :tag "List of directories")
+  :group 'autoinsertion-guru)
 ;;
 ;; User customizable variables
 ;;
 
 ;;
-;; Initialization
+;; Some initial setup
 ;;
+
 ;;make a hash table test named string= using string=
+;; it is a bit more efficient than using equal
 (define-hash-table-test 'string= 'string= 'sxhash)
+
 ;;
-;; Initialization
+;; Some initial setup
 ;;
 
 ;;
@@ -153,8 +151,9 @@ It is assumed every file in mode-dir is a template file"
                :initial-value '())))
 
 (defun load-templates-from-root-dir (root-dir)
-  "Loads all of the template files located in the sub-mode dirs of root-dir
+  "Loads all of the template files located in the sub-mode dirs of root-dir and returns nothing
 root-dir is expected to be an existing directory of all of the sub-mode dirs"
+
   ;;Clear the hash table every time the load function is called
   (clrhash hash-templates-by-mode)
 
@@ -173,6 +172,15 @@ root-dir that will contain template files"
                           (load-template-file mode template-file-path))
                       template-files)))
           mode-dirs)))
+
+(defun load-templates-from-dirs (dirs-ls)
+  "Loads all of the templates found in a list of directories"
+  (if (null dirs-ls)
+      nil ;;base case satisfied, return
+    (let ((first (car dirs-ls))
+          (rest (cdr dirs-ls)))
+      (load-templates-from-root-dir first) ;;load each individual directory
+      (load-templates-from-dirs rest)))) ;;continue the recursion
 
 (defun get-templates-for-major-mode ()
   "Returns the list of template hash tables corresponding to the respective
@@ -260,3 +268,5 @@ If start-delim is not satisfied, the beginning of the buffer is used"
 (remove-hook 'post-command-hook #'aig-post-command-hook-handle)
 
 (load-templates-from-root-dir "/home/damian/bin/ELisp_files/autoinsertion_guru/")
+
+(provide 'autoinsertion-guru)

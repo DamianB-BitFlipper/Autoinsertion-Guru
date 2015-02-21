@@ -1,0 +1,11 @@
+# name [backspace on addition template]
+# hook [backspace]
+# delim [;]
+# expr [[[:digit:]]+\\s-* \\+ $]
+#--
+;backspace already deleted one char, delete the remaining " +"
+(defun delete-two-back ()
+       (delete-backward-char 2)
+       (message "backspace hook inside function"))
+
+(delete-two-back)
