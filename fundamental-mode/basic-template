@@ -1,9 +1,9 @@
 # name [test template]
 # [this is a comment]
-# hook [>]
+# hook [+]
 # delim [;]
-# expr [[[:digit:]]+\s-*-$]
+# expr [[[:digit:]]+\\s-*$]
 #--
-(delete-backward-char 2) ;;delete the hook ->
-(insert " -> ")
-(message "Hooked exec")
+(delete-backward-char 1) ;;delete the hook +
+(insert " + ")
+(message "Hooked\nexec")

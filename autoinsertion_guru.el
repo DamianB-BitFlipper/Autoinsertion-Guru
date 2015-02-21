@@ -56,6 +56,12 @@ This variable is updated every time the context is updated")
     (insert-file-contents file-path)
     (split-string (buffer-string) "\n" t)))
 
+(defun unescape-string (str)
+  "Takes a string with escape chars and makes them into their equivalents processed
+ie: \n (2 chars) becomes newline (1 char)"
+  ;;add quotes around the string so that read interprets the entire string as one sexp
+  (read (concat "\"" str "\"")))
+
 ;;Parses the header of a template file and saves the parsed values in the hash-table
 ;; Handles errors as needed
 (defun parse-template-file-header (contents hash-table)
@@ -78,7 +84,10 @@ This variable is updated every time the context is updated")
                ;; were found, then that line is interpreted as a comment line and is ignored
                (if (zerop (length key))
                    nil ;;do nothing
-                 (puthash key val hash-table))
+                 ;;Be sure to unescape the string so that chars like \n actually become newlines
+                 ;; this makes it as though whatever is between the [] is interpreted as a normal string
+                 ;; although being read character by character from the file input
+                 (puthash key (unescape-string val) hash-table))
 
                (parse-template-file-header rest hash-table))))
           ((string-match "^#\\s-*--\\s-*$" first) ;;end identifier matching
@@ -242,22 +251,12 @@ If start-delim is not satisfied, the beginning of the buffer is used"
      ))
 
   ;;update the context after the scanning of satisfied hooks is complete
-  (aig-update-context)
-  )
+  (aig-update-context))
 
-;(char-to-string 32)
+;(char-to-string 10)
 ;(read-event)
 
 (add-hook 'post-command-hook #'aig-post-command-hook-handle)
 (remove-hook 'post-command-hook #'aig-post-command-hook-handle)
 
 (load-templates-from-root-dir "/home/damian/bin/ELisp_files/autoinsertion_guru/")
-
-;(let ((search-area (buffer-substring start-point end-point)))
-;      (message "%s" (string-match ".*[[:digit:]]+$" search-area)))))
-
-;(load-template-files "c-mode" "~/bin/ELisp_files/autoinsertion_guru/fundamental-mode/basic-template")
-
-;;This works for all
-;;(add-hook 'pre-command-hook #'(lambda () (message "%s\n" last-input-event)))
-
