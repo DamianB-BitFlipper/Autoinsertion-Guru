@@ -64,7 +64,7 @@ This variable is updated every time the context is updated")
 ;; Modes
 ;;
 
-;TODO: make this work
+;;;###autoload
 (define-minor-mode aig-minor-mode
   "Toggle Auto-insertion Guru mode
 
@@ -88,6 +88,23 @@ hooks defined in the templates of the currently loaded major-mode"
    (t (progn
         ;;Disable the post-command-hook
         (aig-disable-post-command-hook)))))
+
+;;By default, do not activate aig in the minibuffer
+(defvar aig-dont-activate '(minibufferp)
+  "List of functions which if evaluated returns t, suppresses the activation of 
+Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
+
+(defun aig-minor-mode-on ()
+  "Turns on the Autoinsertion Guru minor mode, respecting `aig-dont-activate'."
+  (if (cl-some #'funcall aig-dont-activate)
+      nil ;;do not activate if one of the functions in aig-dont-activate returned t
+      (aig-minor-mode 1))) ;;activate if all of the functions in aig-dont-activate returned nil
+
+;;;###autoload
+(define-globalized-minor-mode aig-global-mode aig-minor-mode aig-minor-mode-on
+  :group 'autoinsertion-guru
+  :require 'autoinsertion-guru)
+
 ;;
 ;; Modes
 ;;
