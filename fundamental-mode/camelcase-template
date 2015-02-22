@@ -1,0 +1,19 @@
+# name [camelcasing template]
+# hook [-]
+# delim [\\s-]
+# expr [[[:alpha:]]+$]
+#--
+(defun uppercaseNext ()
+
+       ;;Delete the -
+       (delete-region (- (point) 2) (1- (point)))
+
+       ;;Uppercase the region directly behind the cursor
+       (upcase-region (1- (point)) (point))
+
+       ;;Once processed, remove the hook again
+       (remove-hook 'post-command-hook #'uppercaseNext)
+       )
+
+;;Add the hook
+(add-hook 'post-command-hook #'uppercaseNext)

@@ -61,6 +61,38 @@ This variable is updated every time the context is updated")
 ;;
 
 ;;
+;; Modes
+;;
+
+;TODO: make this work
+(define-minor-mode aig-minor-mode
+  "Toggle Auto-insertion Guru mode
+
+When Auto-insertion Guru is enabled, it listens and tries to evaluate
+hooks defined in the templates of the currently loaded major-mode"
+  nil
+  ;;The indicator for the mode line
+  " aig"
+  :group 'autoinsertion-guru
+  (cond 
+   (aig-minor-mode (progn
+                     ;;Enable the post-command-hook
+                     (aig-enable-post-command-hook)
+
+                     ;;If the aig--hash-templates-by-mode is empty, then load the
+                     ;; hash templates
+                     (if (zerop (hash-table-count aig--hash-templates-by-mode))
+                         ;;TODO: Make this load from the configurable list of directories
+                         (aig-load-templates-from-dirs '("/home/damian/bin/ELisp_files/autoinsertion_guru/"))
+                       nil)))
+   (t (progn
+        ;;Disable the post-command-hook
+        (aig-disable-post-command-hook)))))
+;;
+;; Modes
+;;
+
+;;
 ;; Utility Functions
 ;;
 
@@ -387,8 +419,6 @@ Returns nil if an empty list of choices was supplied or the selected match."
 
 (aig-enable-post-command-hook)
 (aig-disable-post-command-hook)
-
-(aig-load-templates-from-dirs '("/home/damian/bin/ELisp_files/autoinsertion_guru/"))
 
 ;;Provide that this extension was loaded
 (provide 'autoinsertion-guru)
