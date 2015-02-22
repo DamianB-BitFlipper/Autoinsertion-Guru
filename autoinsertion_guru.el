@@ -12,6 +12,19 @@
   "The directories where aig templates are search for in."
   :type '(repeat :args (directory) :tag "List of directories")
   :group 'autoinsertion-guru)
+
+(defcustom aig-prompt-functions '(aig-ido-prompt
+                                  aig-completing-prompt
+                                  aig-first-choice-no-prompt)
+  "Functions to prompt for choosing templates interactively.
+
+These functions are called with the following arguments:
+
+- PROMPT: A string to prompt the user
+
+- CHOICES: a list of strings or objects."
+  :type '(repeat function)
+  :group 'autoinsertion-guru)
 ;;
 ;; User customizable variables
 ;;
@@ -47,6 +60,10 @@ This variable is updated every time the context is updated")
 ;; Global variables
 ;;
 
+;;
+;; Utility Functions
+;;
+
 ;;Read the contents of a file as a list of string where each string is a line of the file
 (defun aig--read-lines (file-path)
   "Return a list of lines of a file at file-path."
@@ -59,6 +76,21 @@ This variable is updated every time the context is updated")
 ie: \n (2 chars) becomes newline (1 char)"
   ;;add quotes around the string so that read interprets the entire string as one sexp
   (read (concat "\"" str "\"")))
+
+(defun aig--index-member (str ls)
+  "Returns the index were str was found in ls or nil if it was not found using member internally."
+  (let ((found (member str ls)))
+    (if (not found)
+        nil
+      (- (length ls) (length found))))) ;;A small hack to get the index where str was found
+
+;;
+;; Utility Functions
+;;
+
+;;
+;; Loading Files and Parsing
+;;
 
 ;;Parses the header of a template file and saves the parsed values in the hash-table
 ;; Handles errors as needed
@@ -185,6 +217,14 @@ root-dir that will contain template files"
   (clrhash aig--hash-templates-by-mode)
   (aig--load-templates-from-dirs* dirs-ls))
 
+;;
+;; Loading Files and Parsing
+;;
+
+;;
+;; Catching and Processing Hooks
+;;
+
 (defun aig--get-templates-for-major-mode ()
   "Returns the list of template hash tables corresponding to the respective
 value in major-mode. Returns '() if there are no templates"
@@ -255,17 +295,98 @@ If start-delim is not satisfied, the beginning of the buffer is used"
     (cond
      ((zerop contexts-len) nil) ;;no matches
      ((= 1 contexts-len) (aig--eval-hash-template (car scanned-contexts))) ;;single match, execute it
-     ;TODO: make the prompting
-     (t (message "Multiple matches found:")))) ;;more than one match, prompt for which one to use
+     (t  ;;more than one match, prompt for which one to use
+      (let* ((choices (mapcar (lambda (elem) (gethash "name" elem)) scanned-contexts))
+             (contexts-index (aig-prompt "(AIG) Multiple matches found: " choices)))
+        ;;if the contexts-index is nil, then most likely C-g was hit so ignore it
+        ;; else, eval the context at that index
+        (if (not contexts-index)
+            nil
+          (aig--eval-hash-template (nth contexts-index scanned-contexts)))))))
 
   ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context))
 
-;(char-to-string 10)
+;;
+;; Catching and Processing Hooks
+;;
+
+;;
+;; Prompting Menu
+;;
+(defun aig-ido-prompt (prompt choices)
+  "Safely tries to run ido as a prompting method.
+Returns nil if it was not able or the selected match."
+  ;;make sure ido is available
+  (if (and (fboundp #'ido-completing-read)
+           (or (>= emacs-major-version 24)
+               ido-mode))
+      (ido-completing-read prompt choices) ;;prompt if possible
+    nil)) ;;return nil signifying completing-prompt was not able to prompt
+
+(defun aig-completing-prompt (prompt choices)
+  "Safely tries to run completing-read as a prompting method.
+Returns nil if it was not able or the selected match."
+  ;;make sure completing-read is available
+  (if (fboundp #'completing-read)
+      (completing-read prompt choices) ;;prompt if possible
+    nil)) ;;return nil signifying completing-read was not able to prompt
+
+(defun aig-first-choice-no-prompt (prompt choices)
+  "Returns the first option of the list of choices.
+Returns nil if an empty list of choices was supplied or the selected match."
+  ;;simply return the first choice without prompting
+  ;; automatically returning nil if there are no choices
+  (car-safe choices))
+
+(defun aig--prompt* (prompt choices)
+  "Given a prompt and a list of string choices, returns the selected choice
+ or nil if the prompting functions in the list aig-prompt-functions all failed."
+  (if (null choices) 
+      nil ;;no choices, so exit with nil
+
+    ;;The result is the first non-nil return of the functions found
+    ;; in the list aig-prompt-functions, returns nil if all of the
+    ;; prompting methods failed or C-g was hit
+    (let ((result (with-local-quit
+                    (cl-some (lambda (fun)
+                               (funcall fun prompt choices))
+                             aig-prompt-functions))))
+      (if (not result)
+          nil ;;All of the prompting methods failed, so exit with nil
+        (aig--index-member result choices))))) ;;return the index the result is found in choices
+
+(defun aig-prompt (prompt choices)
+  ;;Disable the post-command-hook temporarily because the promoting function interfere with it
+  (aig-disable-post-command-hook)
+
+  (let ((result (aig--prompt* prompt choices)))
+    (aig-enable-post-command-hook) ;;Re-enable the post-command-hook after disabling it
+    result)) ;;Return the result
+
+;;
+;; Prompting Menu
+;;
+
+;;
+;; Hooks
+;;
+(defun aig-enable-post-command-hook ()
+  "Enables the aig--post-command-hook-handle on post-command-hook"
+  (add-hook 'post-command-hook #'aig--post-command-hook-handle))
+
+(defun aig-disable-post-command-hook ()
+  "Disables the aig--post-command-hook-handle on post-command-hook"
+  (remove-hook 'post-command-hook #'aig--post-command-hook-handle))
+;;
+;; Hooks
+;;
+
+;(char-to-string 43)
 ;(read-event)
 
-(add-hook 'post-command-hook #'aig--post-command-hook-handle)
-(remove-hook 'post-command-hook #'aig--post-command-hook-handle)
+(aig-enable-post-command-hook)
+(aig-disable-post-command-hook)
 
 (aig-load-templates-from-dirs '("/home/damian/bin/ELisp_files/autoinsertion_guru/"))
 

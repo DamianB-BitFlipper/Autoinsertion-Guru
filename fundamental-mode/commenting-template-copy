@@ -1,0 +1,7 @@
+# name [commenting template copy]
+# hook [return]
+# delim [\n]
+# expr [\\s-*//.*$]
+#--
+(insert "//~~ ")
+(message "Hooked exec")
