@@ -298,11 +298,13 @@ If start-delim is not satisfied, the beginning of the buffer is used"
 (defun aig--hook-matches-last-input-event (hook)
   "Returns t if the last-input-event matches the hook, else it returns nil"
   (cond
-   ((symbolp last-input-event)
+   ((symbolp last-input-event) ;;keyboard keys like arrows, return, etc.
     (string= (symbol-name last-input-event) hook))
-   ((numberp last-input-event)
+   ;;if the last-input-event is a number, that means a char was input, so
+   ;; in order to match, hook must be a string of length 1
+   ((and (numberp last-input-event) (= 1 (length hook)))
     (= last-input-event (string-to-char hook)))
-   (t (error "Unknown input event %s" last-input-event))))
+   (t nil))) ;;no match found
 
 (defun aig-scan-context (context-hashes)
   "Scans the context to see if an hooks are satisfied, hooked on post-command-hook"
