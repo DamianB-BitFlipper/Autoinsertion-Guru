@@ -317,8 +317,11 @@ If start-delim is not satisfied, the beginning of the buffer is used"
           (aig-scan-context rest))))) ;;continue the recursion 
 
 (defun aig--eval-hash-template (hash-template)
-  (let ((exec-str (gethash "exec" hash-template)))
-    (eval (read exec-str))))
+  (condition-case 
+      error-info
+      (let ((exec-str (gethash "exec" hash-template)))
+        (eval (read exec-str)))
+    (error (aig-error (format "In evaluating lisp expr in \"%s\": %s" (gethash "name" hash-template) error-info)))))
 
 (defun aig--post-command-hook-handle ()
   (let* ((scanned-contexts (aig-scan-context aig--list-context-hash-templates))
@@ -335,12 +338,21 @@ If start-delim is not satisfied, the beginning of the buffer is used"
         (if (not selected-context)
             nil
           (aig--eval-hash-template (nth (aig--index-member selected-context choices) scanned-contexts)))))))
-
+  
   ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context))
 
 ;;
 ;; Catching and Processing Hooks
+;;
+
+;;
+;; Error Messaging
+;;
+(defun aig-error (err-msg)
+  (message (concat "AIG Error: " err-msg)))
+;;
+;; Error Messaging
 ;;
 
 ;;
