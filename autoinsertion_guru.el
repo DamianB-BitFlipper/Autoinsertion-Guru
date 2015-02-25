@@ -56,69 +56,49 @@ If on loading, those fields are missing, an error will be signaled")
   "A list of hashes of templates that are enabled in the current context
 This variable is updated every time the context is updated")
 
+(defvar aig--guessed-modes nil
+  "List of guessed modes supporting `aig-load-template-buffer', set as a buffer local variable.")
+
+(defvar aig--current-buffer-template-buffer nil
+  "Boolean if the current buffer is a template buffer, set as a buffer local variable.")
+
+(defconst aig--new-template-buffer-name "*new aig template*" 
+  "The name of the buffer that is created when making a new template.")
+
+(defconst aig--new-template-buffer-template
+  "# name [template name]
+# [this is a sample comment]
+# hook [hook character]
+# delim [delim regex]
+# expr [expr regex]
+#--
+\(lisp expression here\)
+"
+  "The template the is loaded into a new template buffer."
+)
+
 ;;
 ;; Global variables
 ;;
 
 ;;
-;; Modes
+;; Load the Mode details
 ;;
-
-;;;###autoload
-(define-minor-mode aig-minor-mode
-  "Toggle Auto-insertion Guru mode
-
-When Auto-insertion Guru is enabled, it listens and tries to evaluate
-hooks defined in the templates of the currently loaded major-mode"
-  nil
-  ;;The indicator for the mode line
-  " aig"
-  :group 'autoinsertion-guru
-  (cond 
-   (aig-minor-mode (progn
-                     ;;Enable the post-command-hook
-                     (aig-enable-post-command-hook)
-
-                     ;;If the aig--hash-templates-by-mode is empty, then load the
-                     ;; hash templates
-                     (if (zerop (hash-table-count aig--hash-templates-by-mode))
-                         ;;TODO: Make this load from the configurable list of directories
-                         (aig-load-templates-from-dirs '("/home/damian/bin/ELisp_files/autoinsertion_guru/"))
-                       nil)))
-   (t (progn
-        ;;Disable the post-command-hook
-        (aig-disable-post-command-hook)))))
-
-;;By default, do not activate aig in the minibuffer
-(defvar aig-dont-activate '(minibufferp)
-  "List of functions which if evaluated returns t, suppresses the activation of 
-Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
-
-(defun aig-minor-mode-on ()
-  "Turns on the Autoinsertion Guru minor mode, respecting `aig-dont-activate'."
-  (if (cl-some #'funcall aig-dont-activate)
-      nil ;;do not activate if one of the functions in aig-dont-activate returned t
-      (aig-minor-mode 1))) ;;activate if all of the functions in aig-dont-activate returned nil
-
-;;;###autoload
-(define-globalized-minor-mode aig-global-mode aig-minor-mode aig-minor-mode-on
-  :group 'autoinsertion-guru
-  :require 'autoinsertion-guru)
-
+(add-to-list 'load-path ".")
+(require 'autoinsertion-guru-minor-mode "autoinsertion_guru_minor_mode.el")
 ;;
-;; Modes
+;; Load the Mode details
 ;;
 
 ;;
 ;; Utility Functions
 ;;
 
-;;Read the contents of a file as a list of string where each string is a line of the file
-(defun aig--read-lines (file-path)
-  "Return a list of lines of a file at file-path."
+(defun aig--read-file (file-path)
+  "Returns the file's contents as one large string."
   (with-temp-buffer
     (insert-file-contents file-path)
-    (split-string (buffer-string) "\n" t)))
+    (buffer-string)))
 
 (defun aig--unescape-string (str)
   "Takes a string with escape chars and makes them into their equivalents processed
@@ -126,12 +106,12 @@ ie: \n (2 chars) becomes newline (1 char)"
   ;;add quotes around the string so that read interprets the entire string as one sexp
   (read (concat "\"" str "\"")))
 
-(defun aig--index-member (str ls)
-  "Returns the index were str was found in ls or nil if it was not found using member internally."
-  (let ((found (member str ls)))
+(defun aig--index-member (obj ls)
+  "Returns the index were obj was found in ls or nil if it was not found using member internally."
+  (let ((found (member obj ls)))
     (if (not found)
         nil
-      (- (length ls) (length found))))) ;;A small hack to get the index where str was found
+      (- (length ls) (length found))))) ;;A small hack to get the index where obj was found
 
 ;;
 ;; Utility Functions
@@ -174,10 +154,9 @@ ie: \n (2 chars) becomes newline (1 char)"
           (t ;;Else, there must be an error
            (error "Invalid syntax on line: \"%s\"" first))))))
 
-(defun aig--parse-template-file (template-file-path)
-  "Given a template file path, this function parses it"
-  (let ((contents (aig--read-lines template-file-path))
-        (hash-table (make-hash-table :test 'aig--string=)))
+(defun aig--parse-template (contents)
+  "Given a template's contents, this function parses it into a hashtable"
+  (let ((hash-table (make-hash-table :test 'aig--string=)))
     ;;Each hash should guarantee to have the following fields: name, hook, delim, expr, exec
     ;; in the rest of the program, so do the error checking here
     (let* ((pair (aig--parse-template-file-header contents hash-table))
@@ -198,16 +177,18 @@ ie: \n (2 chars) becomes newline (1 char)"
       ;;If mapc did not encounter an error, hash-template is valid and can be returned
       hash-template)))
 
-(defun aig--load-template-file (mode template-file-path)
-  "Loads a template file into a given mode"
+(defun aig--load-template-from-contents (mode contents)
+  "Loads a template given its raw unprocessed contents into a given mode."
   ;;Get what is in mode, defaulting to '() if there is nothing
   ;; and append the parsed data to that list and place it back into the hash table
-  (let ((mode-contents (gethash mode aig--hash-templates-by-mode '())))
-    (puthash mode (cons (aig--parse-template-file template-file-path) mode-contents)
+  ;;Also, contents has to be split around a newline for aig--parse-template
+  (let ((mode-contents (gethash mode aig--hash-templates-by-mode '()))
+        (split-contents (split-string contents "\n")))
+    (puthash mode (cons (aig--parse-template split-contents) mode-contents)
              aig--hash-templates-by-mode)))
 
 (defun aig--get-mode-dirs (root-dir)
-  "Gets all of the directories in root-dir that end in -mode"
+  "Gets all of the directories in root-dir that end in -mode."
   ;;root-contents is a list of files and directories ending in -mode with its full path
   ;; they are then later filtered to only directories by the attributes
   (let ((root-contents (directory-files-and-attributes root-dir t "-mode$" t)))
@@ -220,8 +201,8 @@ ie: \n (2 chars) becomes newline (1 char)"
                :initial-value '())))
 
 (defun aig--get-template-files (mode-dir)
-  "Given a directory mode-dir, returns all of the files in it
-It is assumed every file in mode-dir is a template file"
+  "Given a directory mode-dir, returns all of the files in it.
+It is assumed every file in mode-dir is a template file."
   (let ((templates (directory-files-and-attributes mode-dir t nil t)))
     ;;Filter so that only the files are left from templates
     (cl-reduce #'(lambda (acc x) 
@@ -232,8 +213,8 @@ It is assumed every file in mode-dir is a template file"
                :initial-value '())))
 
 (defun aig--load-templates-from-root-dir (root-dir)
-  "Loads all of the template files located in the sub-mode dirs of root-dir and returns nothing
-root-dir is expected to be an existing directory of all of the sub-mode dirs"
+  "Loads all of the template files located in the sub-mode dirs of root-dir and returns nothing.
+root-dir is expected to be an existing directory of all of the sub-mode dirs."
 
   ;;mode-dirs is a list of the full paths of directories containing templates
   (let ((mode-dirs (aig--get-mode-dirs root-dir)))
@@ -247,7 +228,7 @@ root-dir that will contain template files"
               (let ((template-files (aig--get-template-files mode-dir))
                     (mode (car (last (split-string mode-dir "/")))))
                 (mapc #'(lambda (template-file-path)
-                          (aig--load-template-file mode template-file-path))
+                          (aig--load-template-from-contents mode (aig--read-file template-file-path)))
                       template-files)))
           mode-dirs)))
 
@@ -348,12 +329,12 @@ If start-delim is not satisfied, the beginning of the buffer is used"
      ((= 1 contexts-len) (aig--eval-hash-template (car scanned-contexts))) ;;single match, execute it
      (t  ;;more than one match, prompt for which one to use
       (let* ((choices (mapcar (lambda (elem) (gethash "name" elem)) scanned-contexts))
-             (contexts-index (aig-prompt "(AIG) Multiple matches found: " choices)))
-        ;;if the contexts-index is nil, then most likely C-g was hit so ignore it
-        ;; else, eval the context at that index
-        (if (not contexts-index)
+             (selected-context (aig-prompt "(AIG) Multiple matches found: " choices)))
+        ;;if the selected-context is nil, then most likely C-g was hit so ignore it
+        ;; else, eval the context found at the same index selected-context is found in choices
+        (if (not selected-context)
             nil
-          (aig--eval-hash-template (nth contexts-index scanned-contexts)))))))
+          (aig--eval-hash-template (nth (aig--index-member selected-context choices) scanned-contexts)))))))
 
   ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context))
@@ -393,42 +374,87 @@ Returns nil if an empty list of choices was supplied or the selected match."
 (defun aig--prompt* (prompt choices)
   "Given a prompt and a list of string choices, returns the selected choice
  or nil if the prompting functions in the list aig-prompt-functions all failed."
-  (if (null choices) 
-      nil ;;no choices, so exit with nil
-
-    ;;The result is the first non-nil return of the functions found
-    ;; in the list aig-prompt-functions, returns nil if all of the
-    ;; prompting methods failed or C-g was hit
-    (let ((result (with-local-quit
-                    (cl-some (lambda (fun)
-                               (funcall fun prompt choices))
-                             aig-prompt-functions))))
-      (if (not result)
-          nil ;;All of the prompting methods failed, so exit with nil
-        (aig--index-member result choices))))) ;;return the index the result is found in choices
+  ;;The result is the first non-nil return of the functions found
+  ;; in the list aig-prompt-functions, returns nil if all of the
+  ;; prompting methods failed or C-g was hit
+  (with-local-quit
+    (cl-some (lambda (fun)
+               (funcall fun prompt choices))
+             aig-prompt-functions)))
 
 (defun aig-prompt (prompt choices)
-  ;;Disable the post-command-hook temporarily because the promoting function interfere with it
-  (aig-disable-post-command-hook)
+  ;;Save the hook-state so that it can be set to it after disabling
+  (let ((hook-state (aig-get-post-command-hook-state)))
+    ;;Disable the post-command-hook temporarily because the promoting function interfere with it
+    (aig-disable-post-command-hook)
 
-  (let ((result (aig--prompt* prompt choices)))
-    (aig-enable-post-command-hook) ;;Re-enable the post-command-hook after disabling it
-    result)) ;;Return the result
-
+    (let ((result (aig--prompt* prompt choices)))
+      (aig-set-post-command-hook-state hook-state) ;;set the state hook at the end
+      result))) ;;Return the result
 ;;
 ;; Prompting Menu
+;;
+
+;;
+;; User functions
+;;
+(defun aig-new-template ()
+  "Creates a new template buffer."
+  (interactive)
+
+  ;;Generate a new template buffer and switch to it
+  (switch-to-buffer-other-window (generate-new-buffer aig--new-template-buffer-name))
+
+  ;;set up the buffer local variables
+  (setq-local aig--guessed-modes (list (symbol-name major-mode)))
+  (setq-local aig--current-buffer-template-buffer t)
+  
+  ;;enable aig-minor-mode in the new template buffer
+  (aig-minor-mode 1)
+
+  ;;insert the starter template into the new template buffer
+  (insert aig--new-template-buffer-template)
+  )
+
+(defun aig-load-template-buffer ()
+  "Loads the current template buffer into a selected mode."
+  (interactive)
+
+  ;;If the current buffer is a template buffer, then load it
+  (if aig--current-buffer-template-buffer
+      (let ((selected-mode (aig-prompt "Select mode to load into: " aig--guessed-modes)))
+        ;;If mode is nil, that means most likely C-g was used to exit, so exit doing nothing
+        (if selected-mode
+            ;;load the visible buffer into selected-mode
+            (aig--load-template-from-contents selected-mode (buffer-substring-no-properties
+                                                             (point-min) (point-max)))
+          nil))
+    nil))
+
+;;
+;; User functions
 ;;
 
 ;;
 ;; Hooks
 ;;
 (defun aig-enable-post-command-hook ()
-  "Enables the aig--post-command-hook-handle on post-command-hook"
-  (add-hook 'post-command-hook #'aig--post-command-hook-handle))
+  "Enables the aig--post-command-hook-handle on post-command-hook buffer locally."
+  (add-hook 'post-command-hook #'aig--post-command-hook-handle nil t))
 
 (defun aig-disable-post-command-hook ()
-  "Disables the aig--post-command-hook-handle on post-command-hook"
-  (remove-hook 'post-command-hook #'aig--post-command-hook-handle))
+  "Disables the aig--post-command-hook-handle on post-command-hook buffer locally."
+  (remove-hook 'post-command-hook #'aig--post-command-hook-handle t))
+
+(defun aig-get-post-command-hook-state ()
+  "Returns non-nil if aig is hooked to post-command-hook and nil if it is not."
+  (aig--index-member #'aig--post-command-hook-handle post-command-hook))
+
+(defun aig-set-post-command-hook-state (state)
+  "If state is non-nil, aig is hooked to the post-command-hook, else it is un-hooked."
+  (if state
+      (aig-enable-post-command-hook)
+    (aig-disable-post-command-hook)))
 ;;
 ;; Hooks
 ;;
