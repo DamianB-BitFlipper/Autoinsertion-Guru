@@ -113,6 +113,13 @@ ie: \n (2 chars) becomes newline (1 char)"
         nil
       (- (length ls) (length found))))) ;;A small hack to get the index where obj was found
 
+(defun aig--cons-if (elem ls predicate)
+  "Cons elem to ls if predicate returns a nil values when mapped over all the elements in ls.
+Returns the newly cons'd list, else just the list."
+  (if (cl-some predicate ls)
+      ls ;;predicate returned a non-nil for at least one element in ls, return ls only
+    (cons elem ls))) ;;predicate failed on all elements, so cons
+
 ;;
 ;; Utility Functions
 ;;
@@ -180,11 +187,18 @@ ie: \n (2 chars) becomes newline (1 char)"
 (defun aig--load-template-from-contents (mode contents)
   "Loads a template given its raw unprocessed contents into a given mode."
   ;;Get what is in mode, defaulting to '() if there is nothing
-  ;; and append the parsed data to that list and place it back into the hash table
-  ;;Also, contents has to be split around a newline for aig--parse-template
-  (let ((mode-contents (gethash mode aig--hash-templates-by-mode '()))
-        (split-contents (split-string contents "\n")))
-    (puthash mode (cons (aig--parse-template split-contents) mode-contents)
+  ;; and append the parsed data to that list if the predicate fails
+  ;; on all the elements already in the mode's contents.
+  ;; Then, place it back into the hash table
+  ;; Also, contents has to be split around a newline for aig--parse-template
+  (let* ((mode-contents (gethash mode aig--hash-templates-by-mode '()))
+         (split-contents (split-string contents "\n"))
+         (parsed-template (aig--parse-template split-contents))
+         (parsed-template-name (gethash "name" parsed-template)))
+    (puthash mode (aig--cons-if parsed-template mode-contents 
+                                (lambda (elem) 
+                                  "Tests if the name of elem matches that of the parsed template's name."
+                                  (string= (gethash "name" elem) parsed-template-name)))
              aig--hash-templates-by-mode)))
 
 (defun aig--get-mode-dirs (root-dir)
@@ -238,10 +252,12 @@ root-dir that will contain template files"
       nil ;;base case satisfied, return
     (let ((first (car dirs-ls))
           (rest (cdr dirs-ls)))
-      (aig--load-templates-from-root-dir first) ;;load each individual directory
+      (condition-case error-info
+          (aig--load-templates-from-root-dir first) ;;load each individual directory
+        (file-serror (message "type %s" error-info)))
       (aig--load-templates-from-dirs* rest)))) ;;continue the recursion
 
-(defun aig-load-templates-from-dirs (dirs-ls)
+(defun aig--load-templates-from-dirs (dirs-ls)
   "Clears the hash templates and loads all the templates found in a list of directories"
   ;;Clear the hash table every time the load function is called
   (clrhash aig--hash-templates-by-mode)
@@ -317,8 +333,7 @@ If start-delim is not satisfied, the beginning of the buffer is used"
           (aig-scan-context rest))))) ;;continue the recursion 
 
 (defun aig--eval-hash-template (hash-template)
-  (condition-case 
-      error-info
+  (condition-case error-info
       (let ((exec-str (gethash "exec" hash-template)))
         (eval (read exec-str)))
     (error (aig-error (format "In evaluating lisp expr in \"%s\": %s" (gethash "name" hash-template) error-info)))))
@@ -443,6 +458,13 @@ Returns nil if an empty list of choices was supplied or the selected match."
           nil))
     nil))
 
+(defun aig-load-templates ()
+  "Loads all of the templates found in the sub-mode directories located in
+each directory within the list `aig-template-dirs'."
+  (interactive)
+  ;TODO: somehow handle missing directories
+  (aig--load-templates-from-dirs aig-template-dirs))
+
 ;;
 ;; User functions
 ;;
@@ -476,6 +498,8 @@ Returns nil if an empty list of choices was supplied or the selected match."
 
 (aig-enable-post-command-hook)
 (aig-disable-post-command-hook)
+
+(aig--load-templates-from-dirs '("."))
 
 ;;Provide that this extension was loaded
 (provide 'autoinsertion-guru)
