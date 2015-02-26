@@ -2,6 +2,24 @@
 (require 'cl-lib)
 
 ;;
+;; Version and About Information
+;;
+
+
+(defconst aig--about-name "Autoinsertion Guru"
+  "The name displayed in the about information Autoinsertion Guru.")
+
+(defconst aig--developers '("John Smith")
+  "The list of strings for each developer activly involved in developing Autoinsertion Guru.")
+
+(defconst aig--version "0.0.1" 
+  "The version number for Autoinsertion Guru.")
+
+;;
+;; Version and About Information
+;;
+
+;;
 ;; User customizable variables
 ;;
 (defgroup autoinsertion-guru nil
@@ -470,7 +488,6 @@ prompting methods in the list `aig-prompt-functions' until one of the successful
   "Loads all of the templates found in the sub-mode directories located in
 each directory within the list `aig-template-dirs'."
   (interactive)
-  ;TODO: somehow handle missing directories
   (aig--load-templates-from-dirs aig-template-dirs))
 
 (defun aig-load-directory ()
@@ -479,6 +496,11 @@ each directory within the list `aig-template-dirs'."
   (let ((dir (read-directory-name "Select a directory to load: " nil nil t)))
     ;;Use aig--load-templates-from-dirs* as it handles errors internally
     (aig--load-templates-from-dirs* (list dir))))
+
+(defun aig-about ()
+  "Returns the about information for Autoinsertion Guru."
+  (interactive)
+  (message (format "%s %s -- %s" aig--about-name aig--version (apply #'concat aig--developers))))
 
 ;;
 ;; User functions

@@ -89,12 +89,12 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
                                              'aig-completing-prompt)]
      )    
     "----"
-    ["Load snippets..."  aig-load-directory
+    ["Load snippets..." aig-load-directory
      :help "Load snippets from a specific directory"]
     ["Reload everything" aig-load-templates
      :help "Cleanup stuff, reloads all templates"]
-    ["About"            aig-about
-     :help "Display some information about AIGnippet"]))
+    ["About" aig-about
+     :help "Display some information about Autoinsertion Guru"]))
 ;;
 ;; Menu details
 ;;
