@@ -46,15 +46,15 @@ These functions are called with the following arguments:
 ;;
 (defvar aig--hash-templates-by-mode (make-hash-table :test 'aig--string=)
   "A hash table that holds a list of hash tables of loaded 
-templates for each respective mode identified by the key
+templates for each respective mode identified by the key.
 
 Each hash table element in each of the lists contained in this hash table is
 guaranteed to have the following fields: name, hook, delim, expr
-If on loading, those fields are missing, an error will be signaled")
+If on loading, those fields are missing, an error will be signaled.")
 
 (defvar aig--list-context-hash-templates '() 
-  "A list of hashes of templates that are enabled in the current context
-This variable is updated every time the context is updated")
+  "A list of hashes of templates that are enabled in the current context.
+This variable is updated every time the context is updated.")
 
 (defvar aig--guessed-modes nil
   "List of guessed modes supporting `aig-load-template-buffer', set as a buffer local variable.")
@@ -101,7 +101,7 @@ This variable is updated every time the context is updated")
     (buffer-string)))
 
 (defun aig--unescape-string (str)
-  "Takes a string with escape chars and makes them into their equivalents processed
+  "Takes a string with escape chars and makes them into their equivalents processed.
 ie: \n (2 chars) becomes newline (1 char)"
   ;;add quotes around the string so that read interprets the entire string as one sexp
   (read (concat "\"" str "\"")))
@@ -131,6 +131,8 @@ Returns the newly cons'd list, else just the list."
 ;;Parses the header of a template file and saves the parsed values in the hash-table
 ;; Handles errors as needed
 (defun aig--parse-template-file-header (contents hash-table)
+"Parses the header of a template file given the file's contents and saves the 
+parsed values in the given hash-table. It signals an error if the header of the file is poorly formatted."
   (if (null contents) ;;if contents is null, that means there was no #-- end identifier
       (error "Missing end identifier to template file header")
     (let ((first (car contents))
@@ -162,7 +164,7 @@ Returns the newly cons'd list, else just the list."
            (error "Invalid syntax on line: \"%s\"" first))))))
 
 (defun aig--parse-template (contents)
-  "Given a template's contents, this function parses it into a hashtable"
+  "Given a template's contents, this function parses it into a hashtable and returns it."
   (let ((hash-table (make-hash-table :test 'aig--string=)))
     ;;Each hash should guarantee to have the following fields: name, hook, delim, expr, exec
     ;; in the rest of the program, so do the error checking here
@@ -247,18 +249,18 @@ root-dir that will contain template files"
           mode-dirs)))
 
 (defun aig--load-templates-from-dirs* (dirs-ls)
-  "Loads all of the templates found in a list of directories"
+  "Loads all of the templates found in a list of directories. This function also handles errors."
   (if (null dirs-ls)
       nil ;;base case satisfied, return
     (let ((first (car dirs-ls))
           (rest (cdr dirs-ls)))
       (condition-case error-info
           (aig--load-templates-from-root-dir first) ;;load each individual directory
-        (file-serror (message "type %s" error-info)))
+        (file-error (aig-error (format "%s" error-info))))
       (aig--load-templates-from-dirs* rest)))) ;;continue the recursion
 
 (defun aig--load-templates-from-dirs (dirs-ls)
-  "Clears the hash templates and loads all the templates found in a list of directories"
+  "Clears the hash templates and loads all the templates found in a list of directories."
   ;;Clear the hash table every time the load function is called
   (clrhash aig--hash-templates-by-mode)
   (aig--load-templates-from-dirs* dirs-ls))
@@ -273,12 +275,12 @@ root-dir that will contain template files"
 
 (defun aig--get-templates-for-major-mode ()
   "Returns the list of template hash tables corresponding to the respective
-value in major-mode. Returns '() if there are no templates"
+value in major-mode. Returns '() if there are no templates."
   (gethash (symbol-name major-mode) aig--hash-templates-by-mode '()))
 
 (defun aig--get-search-region (start-delim)
   "Gets the region of the buffer that is between the regex start-delim and point.
-If start-delim is not satisfied, the beginning of the buffer is used"
+If start-delim is not satisfied, the beginning of the buffer is used."
   ;;make it a special let because point moves around when calling re-search-backward
   (let* ((end-point (point))
          (start-point (if (re-search-backward (concat "\\(" start-delim "\\)") nil t) ;;non-nil means matched
@@ -293,7 +295,7 @@ If start-delim is not satisfied, the beginning of the buffer is used"
     (buffer-substring start-point end-point)))
 
 (defun aig-update-context ()
-  "Updates the context list, hooked on post-command-hook"
+  "Updates the context list, hooked on post-command-hook."
   
   ;;clear the current context by setting aig--list-context-hash-templates to '()
   (setq aig--list-context-hash-templates '())
@@ -310,7 +312,7 @@ If start-delim is not satisfied, the beginning of the buffer is used"
           templates-ls)))
 
 (defun aig--hook-matches-last-input-event (hook)
-  "Returns t if the last-input-event matches the hook, else it returns nil"
+  "Returns t if the last-input-event matches the hook, else it returns nil."
   (cond
    ((symbolp last-input-event) ;;keyboard keys like arrows, return, etc.
     (string= (symbol-name last-input-event) hook))
@@ -321,7 +323,7 @@ If start-delim is not satisfied, the beginning of the buffer is used"
    (t nil))) ;;no match found
 
 (defun aig-scan-context (context-hashes)
-  "Scans the context to see if an hooks are satisfied, hooked on post-command-hook"
+  "Scans the context to see if an hooks are satisfied, hooked on post-command-hook."
   (if (null context-hashes)
       '() ;;base case, return '() if context-hashes list is empty
     (let ((first (car context-hashes))
@@ -333,12 +335,17 @@ If start-delim is not satisfied, the beginning of the buffer is used"
           (aig-scan-context rest))))) ;;continue the recursion 
 
 (defun aig--eval-hash-template (hash-template)
+  "Evaluates the exec entry in a given hashtable. This function catches and displays any
+error that may occur during the execution."
   (condition-case error-info
       (let ((exec-str (gethash "exec" hash-template)))
         (eval (read exec-str)))
     (error (aig-error (format "In evaluating lisp expr in \"%s\": %s" (gethash "name" hash-template) error-info)))))
 
 (defun aig--post-command-hook-handle ()
+  "The handle hooked to the post-command-hook. It first tries to satisfy any hooks
+of the scanned-context that had a matching expr before the input of the current character.
+It then updates the contexts within the buffer."
   (let* ((scanned-contexts (aig-scan-context aig--list-context-hash-templates))
          (contexts-len (length scanned-contexts)))
     ;;handles if there was a match
@@ -365,6 +372,7 @@ If start-delim is not satisfied, the beginning of the buffer is used"
 ;; Error Messaging
 ;;
 (defun aig-error (err-msg)
+  "It displays an error message with a custom prefix."
   (message (concat "AIG Error: " err-msg)))
 ;;
 ;; Error Messaging
@@ -410,6 +418,8 @@ Returns nil if an empty list of choices was supplied or the selected match."
              aig-prompt-functions)))
 
 (defun aig-prompt (prompt choices)
+  "Prompts the user with prompt and a list of strings of possible choices. It tries the 
+prompting methods in the list `aig-prompt-functions' until one of the successfully returns."
   ;;Save the hook-state so that it can be set to it after disabling
   (let ((hook-state (aig-get-post-command-hook-state)))
     ;;Disable the post-command-hook temporarily because the promoting function interfere with it
@@ -464,6 +474,13 @@ each directory within the list `aig-template-dirs'."
   (interactive)
   ;TODO: somehow handle missing directories
   (aig--load-templates-from-dirs aig-template-dirs))
+
+(defun aig-load-directory ()
+  "Loads a directory into the `aig--hash-templates-by-mode' by interactively promoting for a directory."
+  (interactive)
+  (let ((dir (read-directory-name "Select a directory to load: " nil nil t)))
+    ;;Use aig--load-templates-from-dirs* as it handles errors internally
+    (aig--load-templates-from-dirs* (list dir))))
 
 ;;
 ;; User functions

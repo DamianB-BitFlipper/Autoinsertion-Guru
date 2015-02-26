@@ -8,7 +8,7 @@
   "Toggle Auto-insertion Guru mode
 
 When Auto-insertion Guru is enabled, it listens and tries to evaluate
-hooks defined in the templates of the currently loaded major-mode"
+hooks defined in the templates of the currently loaded major-mode."
   nil
   ;;The indicator for the mode line
   " aig"
@@ -30,7 +30,7 @@ hooks defined in the templates of the currently loaded major-mode"
 
 ;;By default, do not activate aig in the minibuffer
 (defvar aig-dont-activate '(minibufferp)
-  "List of functions which if evaluated returns t, suppresses the activation of 
+  "List of functions which if evaluated returns a non-nil result, suppresses the activation of 
 Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 
 (defun aig-minor-mode-on ()
@@ -46,8 +46,8 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 
 (defvar aig-minor-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "\C-c a n" #'aig-new-template)
-    (define-key map "\C-c a l" #'aig-load-template-buffer)
+    (define-key map "\C-can" #'aig-new-template)
+    (define-key map "\C-cal" #'aig-load-template-buffer)
     map)
   "The keymap used when `aig-minor-mode' is active.")
 
@@ -60,31 +60,19 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 ;;
 
 (defvar aig--minor-mode-menu nil
-  "Holds the AIGnippet menu.")
+  "Holds the Autoinsertion Guru menu.")
 
 (easy-menu-define aig--minor-mode-menu
       aig-minor-mode-map
       "Menu used when `aig-minor-mode' is active."
-  '("AIG" :visible t
+  '("AI-Guru" :visible t
     "----"
     ["New template..." aig-new-template
      :help "Create a new template in an appropriate directory"]
+    ["Load template..." aig-load-template-buffer
+     :help "Loads a created template buffer temporarily into a selected mode"]
     "----"
     ("Prompting method"
-     ["System X-widget" (setq aig-prompt-functions
-                              (cons 'aig-x-prompt
-                                    (remove 'aig-x-prompt
-                                            aig-prompt-functions)))
-      :help "Use your windowing system's (gtk, mac, windows, etc...) default menu"
-      :active t :style radio   :selected (eq (car aig-prompt-functions)
-                                             'aig-x-prompt)]
-     ["Dropdown-list" (setq aig-prompt-functions
-                            (cons 'aig-dropdown-prompt
-                                  (remove 'aig-dropdown-prompt
-                                          aig-prompt-functions)))
-      :help "Use a special dropdown list"
-      :active t :style radio   :selected (eq (car aig-prompt-functions)
-                                             'aig-dropdown-prompt)]
      ["Ido" (setq aig-prompt-functions
                   (cons 'aig-ido-prompt
                         (remove 'aig-ido-prompt
@@ -103,8 +91,8 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
     "----"
     ["Load snippets..."  aig-load-directory
      :help "Load snippets from a specific directory"]
-    ["Reload everything" aig-reload-all
-     :help "Cleanup stuff, reload snippets, rebuild menus"]
+    ["Reload everything" aig-load-templates
+     :help "Cleanup stuff, reloads all templates"]
     ["About"            aig-about
      :help "Display some information about AIGnippet"]))
 ;;
