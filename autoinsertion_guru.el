@@ -124,13 +124,6 @@ ie: \n (2 chars) becomes newline (1 char)"
   ;;add quotes around the string so that read interprets the entire string as one sexp
   (read (concat "\"" str "\"")))
 
-(defun aig--index-member (obj ls)
-  "Returns the index were obj was found in ls or nil if it was not found using member internally."
-  (let ((found (member obj ls)))
-    (if (not found)
-        nil
-      (- (length ls) (length found))))) ;;A small hack to get the index where obj was found
-
 (defun aig--hash-comp (hash1 hash2 key &optional comp-fn)
   "Compares the key values of hash1 and hash2 using comp-fn, defaulting to equal if comp-fn was no supplied."
   (funcall (or comp-fn equal) (gethash key hash1) (gethash key hash2)))
@@ -375,7 +368,8 @@ It then updates the contexts within the buffer."
         ;; else, eval the context found at the same index selected-context is found in choices
         (if (not selected-context)
             nil
-          (aig--eval-hash-template (nth (aig--index-member selected-context choices) scanned-contexts)))))))
+          (aig--eval-hash-template 
+           (nth (cl-position selected-context choices :test #'string=) scanned-contexts)))))))
   
   ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context))
@@ -519,7 +513,7 @@ each directory within the list `aig-template-dirs'."
 
 (defun aig-get-post-command-hook-state ()
   "Returns non-nil if aig is hooked to post-command-hook and nil if it is not."
-  (aig--index-member #'aig--post-command-hook-handle post-command-hook))
+  (cl-position 'aig--post-command-hook-handle post-command-hook))
 
 (defun aig-set-post-command-hook-state (state)
   "If state is non-nil, aig is hooked to the post-command-hook, else it is un-hooked."

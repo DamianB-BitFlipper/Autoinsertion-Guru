@@ -21,8 +21,7 @@ hooks defined in the templates of the currently loaded major-mode."
                      ;;If the aig--hash-templates-by-mode is empty, then load the
                      ;; hash templates
                      (if (zerop (hash-table-count aig--hash-templates-by-mode))
-                         ;;TODO: Make this load from the configurable list of directories
-                         (aig-load-templates-from-dirs '("/home/damian/bin/ELisp_files/autoinsertion_guru/"))
+                         (aig-load-templates)
                        nil)))
    (t (progn
         ;;Disable the post-command-hook
