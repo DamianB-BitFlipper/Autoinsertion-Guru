@@ -113,12 +113,9 @@ ie: \n (2 chars) becomes newline (1 char)"
         nil
       (- (length ls) (length found))))) ;;A small hack to get the index where obj was found
 
-(defun aig--cons-if (elem ls predicate)
-  "Cons elem to ls if predicate returns a nil values when mapped over all the elements in ls.
-Returns the newly cons'd list, else just the list."
-  (if (cl-some predicate ls)
-      ls ;;predicate returned a non-nil for at least one element in ls, return ls only
-    (cons elem ls))) ;;predicate failed on all elements, so cons
+(defun aig--hash-comp (hash1 hash2 key &optional comp-fn)
+  "Compares the key values of hash1 and hash2 using comp-fn, defaulting to equal if comp-fn was no supplied."
+  (funcall (or comp-fn equal) (gethash key hash1) (gethash key hash2)))
 
 ;;
 ;; Utility Functions
@@ -189,18 +186,19 @@ parsed values in the given hash-table. It signals an error if the header of the 
 (defun aig--load-template-from-contents (mode contents)
   "Loads a template given its raw unprocessed contents into a given mode."
   ;;Get what is in mode, defaulting to '() if there is nothing
-  ;; and append the parsed data to that list if the predicate fails
-  ;; on all the elements already in the mode's contents.
-  ;; Then, place it back into the hash table
-  ;; Also, contents has to be split around a newline for aig--parse-template
+  ;; and append the parsed data to that list
+  ;;Then, place it back into the hash table
+  ;;Also, contents has to be split around a newline for aig--parse-template
   (let* ((mode-contents (gethash mode aig--hash-templates-by-mode '()))
          (split-contents (split-string contents "\n"))
          (parsed-template (aig--parse-template split-contents))
          (parsed-template-name (gethash "name" parsed-template)))
-    (puthash mode (aig--cons-if parsed-template mode-contents 
-                                (lambda (elem) 
-                                  "Tests if the name of elem matches that of the parsed template's name."
-                                  (string= (gethash "name" elem) parsed-template-name)))
+    ;;Add to the mode by removing any templates with the same name and replacing them with the new one
+    (puthash mode (cons parsed-template 
+                        (cl-remove parsed-template mode-contents 
+                                   :test (lambda (e1 e2) 
+                                           "Tests if the name of elem matches that of the parsed template's name."
+                                           (aig--hash-comp e1 e2 "name" #'string=))))
              aig--hash-templates-by-mode)))
 
 (defun aig--get-mode-dirs (root-dir)
