@@ -337,18 +337,17 @@ If start-delim is not satisfied, the beginning of the buffer is used."
                  nil)))
           templates-ls)))
 
-(defun aig--hook-matches-last-input-event (hook)
-  "Returns t if the last-input-event matches the hook, else it returns nil."
-  ;ADDED
-  (message "last command %s %s %s" last-command-event (this-command-keys) this-command)
-  (cond
-   ((symbolp last-input-event) ;;keyboard keys like arrows, return, etc.
-    (string= (symbol-name last-input-event) hook))
-   ;;if the last-input-event is a number, that means a char was input, so
-   ;; in order to match, hook must be a string of length 1
-   ((and (numberp last-input-event) (= 1 (length hook)))
-    (= last-input-event (string-to-char hook)))
-   (t nil))) ;;no match found
+(defun aig--hooks-match (hash)
+  "Returns t if the hook is satisfied with the string value of (this-command-keys) or if
+hook-func is satisfied with the string value of this-command. If both hook and hook-func are available,
+then both must be satisfied by their respective string values."
+  (let ((hook (gethash "hook" hash nil))
+        (hook-func (gethash "hook-func" hash nil)))
+    (and 
+     (or (not hook) ;;compare the this-command-keys string value to hook if hook is non-nil
+         (string= (format "%s" (this-command-keys)) hook))
+     (or (not hook-func) ;;compare the this-command string value to hook-func if hook-func is non-nil
+         (string= (format "%s" this-command) hook-func)))))
 
 (defun aig-scan-context (context-hashes)
   "Scans the context to see if an hooks are satisfied, hooked on post-command-hook."
@@ -357,8 +356,8 @@ If start-delim is not satisfied, the beginning of the buffer is used."
     (let ((first (car context-hashes))
           (rest (cdr context-hashes)))
 
-      ;;check if the hook matched
-      (if (aig--hook-matches-last-input-event (gethash "hook" first))
+      ;;check if the hooks match
+      (if (aig--hooks-match first)
           (cons first (aig-scan-context rest)) ;;cons the matched context template and continue the recursion
           (aig-scan-context rest))))) ;;continue the recursion 
 
