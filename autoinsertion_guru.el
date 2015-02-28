@@ -173,26 +173,43 @@ parsed values in the given hash-table. It signals an error if the header of the 
 
 (defun aig--parse-template (contents)
   "Given a template's contents, this function parses it into a hashtable and returns it."
-  (let ((hash-table (make-hash-table :test 'aig--string=)))
-    ;;Each hash should guarantee to have the following fields: name, hook, delim, expr, exec
-    ;; in the rest of the program, so do the error checking here
-    (let* ((pair (aig--parse-template-file-header contents hash-table))
-           (hash-template (car pair))
-           (rest-contents (cdr pair)))
-      ;;concatenate rest-contents with newlines after each
-      ;; statement so that comments don't comment more than wanted
-      ;; and insert it into the hash-template under the key: exec
-      ;; make sure to wrap the rest contents in a progn to be able to evaluate it as one big sexp
-      (puthash "exec" (mapconcat 'identity (append '("(progn ") rest-contents '(")")) "\n") hash-template)
-
+  ;;Each hash should guarantee to have certain fields in the rest of the program,
+  ;; so do the error checking here to see if everything is alright
+  (let* ((hash-table (make-hash-table :test 'aig--string=))
+         (pair (aig--parse-template-file-header contents hash-table))
+         (hash-template (car pair))
+         (rest-contents (cdr pair)))
+    ;;concatenate rest-contents with newlines after each
+    ;; statement so that comments don't comment more than wanted
+    ;; and insert it into the hash-template under the key: exec
+    ;; make sure to wrap the rest contents in a progn to be able to evaluate it as one big sexp
+    (puthash "exec" (mapconcat 'identity (append '("(progn ") rest-contents '(")")) "\n") hash-template)
+    
+    ;;lexical scoped cl-labels for safe measures and recursive elements
+    (cl-labels ((key-exists (key) 
+                            "Tests if key exists in hash-template, if list, at least one of the elems has to exist."
+                            (if (listp key) ;;Then at least one of the keys inside the list has to exists
+                                (cl-some #'key-exists key)
+                              (gethash key hash-template nil)))
+                (format-error (err-key)
+                              "Makes the error message containing the missing key(s) more user friendly."
+                              (if (listp err-key)
+                                  ;;format it so that each element is quoted and has or's interspersed
+                                  (cl-reduce #'(lambda (acc x)
+                                                 (concat "\"" acc "\" or \"" x "\""))
+                                             err-key)
+                                ;;just quote the err text
+                                (concat "\"" err-key "\""))))
       ;;We only care about the side-effect if it errors, so that is why we use mapc
-      (mapc #'(lambda (key-name) 
-                (if (gethash key-name hash-template nil) ;;returns nil if the key-name does not exist
-                    '()
-                  (error "Parsed template does not include key \"%s\"" key-name))) ;;error if it is not found
-            '("name" "hook" "delim" "expr" "exec"))
-      ;;If mapc did not encounter an error, hash-template is valid and can be returned
-      hash-template)))
+      (mapc #'(lambda (key-name)
+                "Errors when the key key-name does not exist in the hash-table."
+                (if (key-exists key-name)
+                    nil ;;no effect
+                  ;;error if it is not found
+                  (error "Parsed template does not include key %s" (format-error key-name))))
+            '("name" ("hook" "hook-func") "delim" "expr" "exec")))
+    ;;If mapc did not encounter an error, hash-template is valid and can be returned
+    hash-template))
 
 (defun aig--load-template-from-contents (mode contents)
   "Loads a template given its raw unprocessed contents into a given mode."
@@ -322,6 +339,8 @@ If start-delim is not satisfied, the beginning of the buffer is used."
 
 (defun aig--hook-matches-last-input-event (hook)
   "Returns t if the last-input-event matches the hook, else it returns nil."
+  ;ADDED
+  (message "last command %s %s %s" last-command-event (this-command-keys) this-command)
   (cond
    ((symbolp last-input-event) ;;keyboard keys like arrows, return, etc.
     (string= (symbol-name last-input-event) hook))
@@ -368,7 +387,7 @@ It then updates the contexts within the buffer."
         ;; else, eval the context found at the same index selected-context is found in choices
         (if (not selected-context)
             nil
-          (aig--eval-hash-template 
+          (aig--eval-hash-template
            (nth (cl-position selected-context choices :test #'string=) scanned-contexts)))))))
   
   ;;update the context after the scanning of satisfied hooks is complete

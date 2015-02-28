@@ -45,8 +45,8 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 
 (defvar aig-minor-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "\C-can" #'aig-new-template)
-    (define-key map "\C-cal" #'aig-load-template-buffer)
+    (define-key map (kbd "C-c a n") #'aig-new-template)
+    (define-key map (kbd "C-c a l") #'aig-load-template-buffer)
     map)
   "The keymap used when `aig-minor-mode' is active.")
 
@@ -88,8 +88,8 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
                                              'aig-completing-prompt)]
      )    
     "----"
-    ["Load snippets..." aig-load-directory
-     :help "Load snippets from a specific directory"]
+    ["Load templates..." aig-load-directory
+     :help "Load templates from a specific directory"]
     ["Reload everything" aig-load-templates
      :help "Cleanup stuff, reloads all templates"]
     ["About" aig-about
