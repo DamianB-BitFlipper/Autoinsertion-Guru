@@ -62,6 +62,12 @@ These functions are called with the following arguments:
 ;;
 ;; Global variables
 ;;
+
+;;The structure housing the data for a single loaded template
+;; hash - the hash table of a template
+;; path - a string to the path of the template file, nil if there is no path
+(cl-defstruct aig-template hash path)
+
 (defvar aig--hash-templates-by-mode (make-hash-table :test 'aig--string=)
   "A hash table that holds a list of hash tables of loaded 
 templates for each respective mode identified by the key.
@@ -127,6 +133,10 @@ ie: \n (2 chars) becomes newline (1 char)"
 (defun aig--hash-comp (hash1 hash2 key &optional comp-fn)
   "Compares the key values of hash1 and hash2 using comp-fn, defaulting to equal if comp-fn was no supplied."
   (funcall (or comp-fn equal) (gethash key hash1) (gethash key hash2)))
+
+(defmacro aig--extract (type ls)
+  "From a list of packaged templates, returns a list of only `type' of each packaged template."
+  `(mapcar #',(make-symbol (concat "aig-template-" (symbol-name type))) ls))
 
 ;;
 ;; Utility Functions
@@ -211,8 +221,9 @@ parsed values in the given hash-table. It signals an error if the header of the 
     ;;If mapc did not encounter an error, hash-template is valid and can be returned
     hash-template))
 
-(defun aig--load-template-from-contents (mode contents)
-  "Loads a template given its raw unprocessed contents into a given mode."
+(defun aig--load-template-from-contents (mode contents &optional path)
+  "Loads a template given its raw unprocessed contents into a given mode.
+Also, it packages other pieces of data like its file path with the template."
   ;;Get what is in mode, defaulting to '() if there is nothing
   ;; and append the parsed data to that list
   ;;Then, place it back into the hash table
@@ -220,13 +231,14 @@ parsed values in the given hash-table. It signals an error if the header of the 
   (let* ((mode-contents (gethash mode aig--hash-templates-by-mode '()))
          (split-contents (split-string contents "\n"))
          (parsed-template (aig--parse-template split-contents))
-         (parsed-template-name (gethash "name" parsed-template)))
+         (packaged-template (make-aig-template :hash parsed-template :path path)))
     ;;Add to the mode by removing any templates with the same name and replacing them with the new one
-    (puthash mode (cons parsed-template 
-                        (cl-remove parsed-template mode-contents 
-                                   :test (lambda (e1 e2) 
+    ;; the list mode-contents is a list of packaged templates, only the hashes need to be compared in the lambda
+    (puthash mode (cons packaged-template
+                        (cl-remove parsed-template mode-contents
+                                   :test (lambda (e1 e2) ;;e1 is a template hash while e2 is a packaged template
                                            "Tests if the name of elem matches that of the parsed template's name."
-                                           (aig--hash-comp e1 e2 "name" #'string=))))
+                                           (aig--hash-comp e1 (aig-template-hash e2) "name" #'string=))))
              aig--hash-templates-by-mode)))
 
 (defun aig--get-mode-dirs (root-dir)
@@ -270,7 +282,10 @@ root-dir that will contain template files"
               (let ((template-files (aig--get-template-files mode-dir))
                     (mode (car (last (split-string mode-dir "/")))))
                 (mapc #'(lambda (template-file-path)
-                          (aig--load-template-from-contents mode (aig--read-file template-file-path)))
+                          ;;Loads the template at template-file-path into the mode and supplies its path
+                          ;; into aig--load-template-from-contents
+                          (aig--load-template-from-contents mode (aig--read-file template-file-path) 
+                                                            template-file-path))
                       template-files)))
           mode-dirs)))
 
@@ -327,7 +342,7 @@ If start-delim is not satisfied, the beginning of the buffer is used."
   (setq aig--list-context-hash-templates '())
 
   ;;templates-ls is the list of templates for the current major-mode, '() if there are none
-  (let ((templates-ls (aig--get-templates-for-major-mode)))
+  (let ((templates-ls (aig--extract hash (aig--get-templates-for-major-mode))))
     (mapc #'(lambda (hash-template)
              (let ((search-area (aig--get-search-region (gethash "delim" hash-template))))
                ;;Destructive cons the hash-template if expr matches the context search-area
@@ -388,7 +403,7 @@ It then updates the contexts within the buffer."
             nil
           (aig--eval-hash-template
            (nth (cl-position selected-context choices :test #'string=) scanned-contexts)))))))
-  
+
   ;;update the context after the scanning of satisfied hooks is complete
   (aig-update-context))
 
@@ -461,7 +476,7 @@ prompting methods in the list `aig-prompt-functions' until one of the successful
 ;;
 
 ;;
-;; User functions
+;; User Interactive Functions
 ;;
 (defun aig-new-template ()
   "Creates a new template buffer."
@@ -478,8 +493,7 @@ prompting methods in the list `aig-prompt-functions' until one of the successful
   (aig-minor-mode 1)
 
   ;;insert the starter template into the new template buffer
-  (insert aig--new-template-buffer-template)
-  )
+  (insert aig--new-template-buffer-template))
 
 (defun aig-load-template-buffer ()
   "Loads the current template buffer into a selected mode."
@@ -490,9 +504,10 @@ prompting methods in the list `aig-prompt-functions' until one of the successful
       (let ((selected-mode (aig-prompt "Select mode to load into: " aig--guessed-modes)))
         ;;If mode is nil, that means most likely C-g was used to exit, so exit doing nothing
         (if selected-mode
-            ;;load the visible buffer into selected-mode
+            ;;load the visible buffer into selected-mode, since this is only loading
+            ;; no path can be supplied to aig--load-template-from-contents as a file path does not exist
             (aig--load-template-from-contents selected-mode (buffer-substring-no-properties
-                                                             (point-min) (point-max)))
+                                                             (point-min) (point-max)) nil)
           nil))
     nil))
 
@@ -509,13 +524,23 @@ each directory within the list `aig-template-dirs'."
     ;;Use aig--load-templates-from-dirs* as it handles errors internally
     (aig--load-templates-from-dirs* (list dir))))
 
+(defun aig-visit-template-file ()
+  "Opens a template file loaded in the current major mode for editing."
+  (interactive)
+
+  (let* ((loaded-templates (aig--get-templates-for-major-mode))
+         (template-hashes (aig--extract hash loaded-templates)))
+    
+    )
+  )
+
 (defun aig-about ()
   "Returns the about information for Autoinsertion Guru."
   (interactive)
   (message (format "%s %s -- %s" aig--about-name aig--version (apply #'concat aig--developers))))
 
 ;;
-;; User functions
+;; User Interactive Functions
 ;;
 
 ;;
