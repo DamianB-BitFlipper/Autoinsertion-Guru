@@ -136,7 +136,7 @@ ie: \n (2 chars) becomes newline (1 char)"
 
 (defmacro aig--extract (type ls)
   "From a list of packaged templates, returns a list of only `type' of each packaged template."
-  `(mapcar #',(make-symbol (concat "aig-template-" (symbol-name type))) ls))
+  `(mapcar #',(intern (concat "aig-template-" (symbol-name type))) ,ls))
 
 ;;
 ;; Utility Functions
@@ -396,7 +396,7 @@ It then updates the contexts within the buffer."
      ((= 1 contexts-len) (aig--eval-hash-template (car scanned-contexts))) ;;single match, execute it
      (t  ;;more than one match, prompt for which one to use
       (let* ((choices (mapcar (lambda (elem) (gethash "name" elem)) scanned-contexts))
-             (selected-context (aig-prompt "(AIG) Multiple matches found: " choices)))
+             (selected-context (aig-prompt "(AIG) Multiple matches found: " choices t))) ;;also, require a match
         ;;if the selected-context is nil, then most likely C-g was hit so ignore it
         ;; else, eval the context found at the same index selected-context is found in choices
         (if (not selected-context)
@@ -424,51 +424,57 @@ It then updates the contexts within the buffer."
 ;;
 ;; Prompting Menu
 ;;
-(defun aig-ido-prompt (prompt choices)
+(defun aig-ido-prompt (prompt choices req-match)
   "Safely tries to run ido as a prompting method.
 Returns nil if it was not able or the selected match."
   ;;make sure ido is available
   (if (and (fboundp #'ido-completing-read)
            (or (>= emacs-major-version 24)
                ido-mode))
-      (ido-completing-read prompt choices) ;;prompt if possible
+      (ido-completing-read prompt choices nil req-match) ;;prompt if possible
     nil)) ;;return nil signifying completing-prompt was not able to prompt
 
-(defun aig-completing-prompt (prompt choices)
+(defun aig-completing-prompt (prompt choices req-match)
   "Safely tries to run completing-read as a prompting method.
 Returns nil if it was not able or the selected match."
   ;;make sure completing-read is available
   (if (fboundp #'completing-read)
-      (completing-read prompt choices) ;;prompt if possible
+      (completing-read prompt choices nil req-match) ;;prompt if possible
     nil)) ;;return nil signifying completing-read was not able to prompt
 
-(defun aig-first-choice-no-prompt (prompt choices)
+(defun aig-first-choice-no-prompt (prompt choices req-match)
   "Returns the first option of the list of choices.
 Returns nil if an empty list of choices was supplied or the selected match."
   ;;simply return the first choice without prompting
   ;; automatically returning nil if there are no choices
   (car-safe choices))
 
-(defun aig--prompt* (prompt choices)
+(defun aig--prompt* (prompt choices req-match)
   "Given a prompt and a list of string choices, returns the selected choice
- or nil if the prompting functions in the list aig-prompt-functions all failed."
+ or nil if the prompting functions in the list aig-prompt-functions all failed.
+
+If req-match is non-nil, then the prompting methods should not allow the user to 
+input a choice that is not in choices."
   ;;The result is the first non-nil return of the functions found
   ;; in the list aig-prompt-functions, returns nil if all of the
   ;; prompting methods failed or C-g was hit
   (with-local-quit
     (cl-some (lambda (fun)
-               (funcall fun prompt choices))
+               (funcall fun prompt choices req-match))
              aig-prompt-functions)))
 
-(defun aig-prompt (prompt choices)
+(defun aig-prompt (prompt choices &optional req-match)
   "Prompts the user with prompt and a list of strings of possible choices. It tries the 
-prompting methods in the list `aig-prompt-functions' until one of the successfully returns."
+prompting methods in the list `aig-prompt-functions' until one of the successfully returns.
+
+If req-match is non-nil, then the prompting methods should not allow the user to 
+input a choice that is not in choices."
   ;;Save the hook-state so that it can be set to it after disabling
   (let ((hook-state (aig-get-post-command-hook-state)))
     ;;Disable the post-command-hook temporarily because the promoting function interfere with it
     (aig-disable-post-command-hook)
 
-    (let ((result (aig--prompt* prompt choices)))
+    (let ((result (aig--prompt* prompt choices req-match)))
       (aig-set-post-command-hook-state hook-state) ;;set the state hook at the end
       result))) ;;Return the result
 ;;
@@ -478,22 +484,28 @@ prompting methods in the list `aig-prompt-functions' until one of the successful
 ;;
 ;; User Interactive Functions
 ;;
+(defun aig--init-template-buffer (mode)
+  "Sets up the current buffer to be a template buffer with the suggested mode as `mode'."
+  ;;set up the buffer local variables
+  (setq-local aig--guessed-modes (list (symbol-name mode)))
+  (setq-local aig--current-buffer-template-buffer t)
+  
+  ;;enable aig-minor-mode in the new template buffer
+  (aig-minor-mode 1))
+
 (defun aig-new-template ()
   "Creates a new template buffer."
   (interactive)
 
-  ;;Generate a new template buffer and switch to it
-  (switch-to-buffer-other-window (generate-new-buffer aig--new-template-buffer-name))
+  (let ((mode major-mode))
+    ;;Generate a new template buffer and switch to it
+    (switch-to-buffer-other-window (generate-new-buffer aig--new-template-buffer-name))
 
-  ;;set up the buffer local variables
-  (setq-local aig--guessed-modes (list (symbol-name major-mode)))
-  (setq-local aig--current-buffer-template-buffer t)
-  
-  ;;enable aig-minor-mode in the new template buffer
-  (aig-minor-mode 1)
+    ;;Set up this current buffer as a template buffer with mode as the suggested mode for loading
+    (aig--init-template-buffer mode)
 
-  ;;insert the starter template into the new template buffer
-  (insert aig--new-template-buffer-template))
+    ;;Insert the starter template into the new template buffer
+    (insert aig--new-template-buffer-template)))
 
 (defun aig-load-template-buffer ()
   "Loads the current template buffer into a selected mode."
@@ -524,15 +536,48 @@ each directory within the list `aig-template-dirs'."
     ;;Use aig--load-templates-from-dirs* as it handles errors internally
     (aig--load-templates-from-dirs* (list dir))))
 
+(defun aig--switch-to-template-buffer (filepath)
+  "Switches to the template buffer `filepath' if it is already opened, if not, it opens
+the file at `filepath' and initializes the buffer as a template buffer."
+  (let ((opened-buffer (get-file-buffer filepath)))
+    ;;If the filepath is opened in a buffer, just switch to it, else
+    ;; read and load the path as a new template buffer
+    (if opened-buffer
+        (switch-to-buffer-other-window opened-buffer)
+      (let ((mode major-mode))
+        ;;Open the file in the other window
+        (find-file-other-window filepath)
+        
+        ;;Set up this current buffer as a template buffer with mode as the suggested mode for loading
+        (aig--init-template-buffer mode)))))
+
 (defun aig-visit-template-file ()
   "Opens a template file loaded in the current major mode for editing."
   (interactive)
 
+  ;;loaded-templates are the packaged templates of the current major-mode in a list
+  ;; template-hashes is just a list of the hash component of each of the loaded templates
+  ;; template-names is a list of the names of each of the template hashes
+  ;;Note: all the templates share indexes, so the first element of loaded-template has a hash of
+  ;; the first of template-hashes which has a \"name\" field of the first of template-names
   (let* ((loaded-templates (aig--get-templates-for-major-mode))
-         (template-hashes (aig--extract hash loaded-templates)))
-    
-    )
-  )
+         (template-hashes (aig--extract hash loaded-templates))
+         (template-names (mapcar #'(lambda (x) 
+                                     (gethash "name" x)) 
+                                 template-hashes)))
+    ;;Prompt giving the names, requiring a match from the template-names choices
+    (let ((selected-template-name (aig-prompt "Choose a template to edit: " template-names t)))
+      ;;If selected-template-name is nil, that means most likely C-g was activated, so do nothing
+      (if selected-template-name
+          ;;At the same index the selected-template-name is in template-names, the selected packaged template is
+          ;; in the loaded-template, then just get the path string from that selected-template
+          (let* ((selected-template (nth (cl-position selected-template-name template-names :test #'string=)
+                                         loaded-templates)) 
+                 (selected-template-path (aig-template-path selected-template)))
+            ;;Once there is a selected path, let aig--switch-to-template-buffer handle the file
+            ;; opening and initializing the buffer as a template buffer
+            (aig--switch-to-template-buffer selected-template-path))
+        nil))))
 
 (defun aig-about ()
   "Returns the about information for Autoinsertion Guru."
