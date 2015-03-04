@@ -490,8 +490,8 @@ input a choice that is not in choices."
   (setq-local aig--guessed-modes (list (symbol-name mode)))
   (setq-local aig--current-buffer-template-buffer t)
   
-  ;;enable aig-minor-mode in the new template buffer
-  (aig-minor-mode 1))
+  ;;enable aig--template-mode in the new template buffer
+  (aig--template-mode 1))
 
 (defun aig-new-template ()
   "Creates a new template buffer."
@@ -511,7 +511,7 @@ input a choice that is not in choices."
   "Loads the current template buffer into a selected mode."
   (interactive)
 
-  ;;If the current buffer is a template buffer, then load it
+  ;;Basic sanity check, if the current buffer is a template buffer, then load it
   (if aig--current-buffer-template-buffer
       (let ((selected-mode (aig-prompt "Select mode to load into: " aig--guessed-modes)))
         ;;If mode is nil, that means most likely C-g was used to exit, so exit doing nothing
@@ -564,9 +564,9 @@ the file at `filepath' and initializes the buffer as a template buffer."
          (template-hashes (aig--extract hash loaded-templates))
          (template-names (mapcar #'(lambda (x) 
                                      (gethash "name" x)) 
-                                 template-hashes)))
-    ;;Prompt giving the names, requiring a match from the template-names choices
-    (let ((selected-template-name (aig-prompt "Choose a template to edit: " template-names t)))
+                                 template-hashes))
+         ;;Prompt giving the names, requiring a match from the template-names choices
+         (selected-template-name (aig-prompt "Choose a template to edit: " template-names t)))
       ;;If selected-template-name is nil, that means most likely C-g was activated, so do nothing
       (if selected-template-name
           ;;At the same index the selected-template-name is in template-names, the selected packaged template is
@@ -577,7 +577,7 @@ the file at `filepath' and initializes the buffer as a template buffer."
             ;;Once there is a selected path, let aig--switch-to-template-buffer handle the file
             ;; opening and initializing the buffer as a template buffer
             (aig--switch-to-template-buffer selected-template-path))
-        nil))))
+        nil)))
 
 (defun aig-about ()
   "Returns the about information for Autoinsertion Guru."

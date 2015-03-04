@@ -46,7 +46,7 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 (defvar aig-minor-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c a n") #'aig-new-template)
-    (define-key map (kbd "C-c a l") #'aig-load-template-buffer)
+    (define-key map (kbd "C-c a v") #'aig-visit-template-file)
     map)
   "The keymap used when `aig-minor-mode' is active.")
 
@@ -68,8 +68,8 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
     "----"
     ["New template..." aig-new-template
      :help "Create a new template in an appropriate directory"]
-    ["Load template..." aig-load-template-buffer
-     :help "Loads a created template buffer temporarily into a selected mode"]
+    ["Visit template..." aig-visit-template-file
+     :help "Open a loaded template file for editing"]
     "----"
     ("Prompting method"
      ["Ido" (setq aig-prompt-functions
@@ -96,6 +96,38 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
      :help "Display some information about Autoinsertion Guru"]))
 ;;
 ;; Menu details
+;;
+
+;;
+;; Template Buffer Mode
+;;
+
+(defvar aig--template-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c a l") #'aig-load-template-buffer)
+    map)
+  "The keymap used when `aig--template-mode-map' is active.")
+
+;;;###autoload
+(define-minor-mode aig--template-mode
+  "Toggles the special editing mode for Auto-insertion Guru templates."
+  nil
+  ;;The indicator for the mode line
+  " aig-template"
+  :group 'autoinsertion-guru
+  :keymap 'aig--template-mode-map ;;Define the keys that go with this mode
+
+  ;;Disable any effects of this mode in non-template buffers
+  ;; aig--current-buffer-template-buffer is set manually internally
+  ;; if it is not set and the template-mode is enabled, that must mean that
+  ;; the user turned the mode on manually, do disable it automatically
+  ;; else do nothing
+  (if (and aig--template-mode (not aig--current-buffer-template-buffer))
+      (aig--template-mode -1) ;;disable the mode
+    nil))
+
+;;
+;; Template Buffer Mode
 ;;
 
 ;;Provide that this file was loaded
