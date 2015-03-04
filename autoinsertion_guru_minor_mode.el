@@ -115,7 +115,6 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
   ;;The indicator for the mode line
   " aig-template"
   :group 'autoinsertion-guru
-  :keymap 'aig--template-mode-map ;;Define the keys that go with this mode
 
   ;;Disable any effects of this mode in non-template buffers
   ;; aig--current-buffer-template-buffer is set manually internally
@@ -128,6 +127,43 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 
 ;;
 ;; Template Buffer Mode
+;;
+
+;;
+;; Template Buffer Mode Menu
+;;
+(defvar aig--template-mode-menu nil
+  "Holds the Autoinsertion Guru menu for the `aig--template-mode'.")
+
+(easy-menu-define aig--template-mode-menu
+      aig--template-mode-map
+      "Menu used when `aig--template-mode' is active."
+  '("AIG-Template" :visible t
+    "----"
+    ["Load template..." aig-load-template-buffer
+     :help "Loads the active buffer as a template buffer"]
+    "----"
+    ("Prompting method"
+     ["Ido" (setq aig-prompt-functions
+                  (cons 'aig-ido-prompt
+                        (remove 'aig-ido-prompt
+                                aig-prompt-functions)))
+      :help "Use an ido-style minibuffer prompt"
+      :active t :style radio   :selected (eq (car aig-prompt-functions)
+                                             'aig-ido-prompt)]
+     ["Completing read" (setq aig-prompt-functions
+                              (cons 'aig-completing-prompt
+                                    (remove 'aig-completing-prompt
+                                            aig-prompt-functions)))
+      :help "Use a normal minibuffer prompt"
+      :active t :style radio   :selected (eq (car aig-prompt-functions)
+                                             'aig-completing-prompt)]
+     )    
+    "----"
+    ["About" aig-about
+     :help "Display some information about Autoinsertion Guru"]))
+;;
+;; Template Buffer Mode Menu
 ;;
 
 ;;Provide that this file was loaded
