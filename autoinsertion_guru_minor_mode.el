@@ -55,23 +55,10 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 ;;
 
 ;;
-;; Menu details
+;; Selection for Prompting Methods
 ;;
-
-(defvar aig--minor-mode-menu nil
-  "Holds the Autoinsertion Guru menu.")
-
-(easy-menu-define aig--minor-mode-menu
-      aig-minor-mode-map
-      "Menu used when `aig-minor-mode' is active."
-  '("AI-Guru" :visible t
-    "----"
-    ["New template..." aig-new-template
-     :help "Create a new template in an appropriate directory"]
-    ["Visit template..." aig-visit-template-file
-     :help "Open a loaded template file for editing"]
-    "----"
-    ("Prompting method"
+(defvar aig--selection-prompting-method
+  '("Prompting method"
      ["Ido" (setq aig-prompt-functions
                   (cons 'aig-ido-prompt
                         (remove 'aig-ido-prompt
@@ -85,8 +72,31 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
                                             aig-prompt-functions)))
       :help "Use a normal minibuffer prompt"
       :active t :style radio   :selected (eq (car aig-prompt-functions)
-                                             'aig-completing-prompt)]
-     )    
+                                             'aig-completing-prompt)])
+  "The selection in the menu for the prompting method."
+  )
+;;
+;; Selection for Prompting Methods
+;;
+
+;;
+;; Menu details
+;;
+
+(defvar aig--minor-mode-menu nil
+  "Holds the Autoinsertion Guru menu.")
+
+(easy-menu-define aig--minor-mode-menu
+      aig-minor-mode-map
+      "Menu used when `aig-minor-mode' is active."
+  `("AI-Guru" :visible t
+    "----"
+    ["New template..." aig-new-template
+     :help "Create a new template in an appropriate directory"]
+    ["Visit template..." aig-visit-template-file
+     :help "Open a loaded template file for editing"]
+    "----"
+    ,aig--selection-prompting-method
     "----"
     ["Load templates..." aig-load-directory
      :help "Load templates from a specific directory"]
@@ -138,27 +148,12 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 (easy-menu-define aig--template-mode-menu
       aig--template-mode-map
       "Menu used when `aig--template-mode' is active."
-  '("AIG-Template" :visible t
+  `("AIG-Template" :visible t
     "----"
     ["Load template..." aig-load-template-buffer
      :help "Loads the active buffer as a template buffer"]
     "----"
-    ("Prompting method"
-     ["Ido" (setq aig-prompt-functions
-                  (cons 'aig-ido-prompt
-                        (remove 'aig-ido-prompt
-                                aig-prompt-functions)))
-      :help "Use an ido-style minibuffer prompt"
-      :active t :style radio   :selected (eq (car aig-prompt-functions)
-                                             'aig-ido-prompt)]
-     ["Completing read" (setq aig-prompt-functions
-                              (cons 'aig-completing-prompt
-                                    (remove 'aig-completing-prompt
-                                            aig-prompt-functions)))
-      :help "Use a normal minibuffer prompt"
-      :active t :style radio   :selected (eq (car aig-prompt-functions)
-                                             'aig-completing-prompt)]
-     )    
+    ,aig--selection-prompting-method
     "----"
     ["About" aig-about
      :help "Display some information about Autoinsertion Guru"]))
