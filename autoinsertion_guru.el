@@ -66,7 +66,8 @@ These functions are called with the following arguments:
 ;;The structure housing the data for a single loaded template
 ;; hash - the hash table of a template
 ;; path - a string to the path of the template file, nil if there is no path
-(cl-defstruct aig-template hash path)
+;; loaded-mode - a string representing the mode the current template is loaded in
+(cl-defstruct aig-template hash path loaded-mode)
 
 (defvar aig--hash-templates-by-mode (make-hash-table :test 'aig--string=)
   "A hash table that holds a list of hash tables of loaded 
@@ -81,18 +82,28 @@ If on loading, those fields are missing, an error will be signaled.")
 This variable is updated every time the context is updated.")
 
 (defvar aig--guessed-modes nil
-  "List of guessed modes supporting `aig-load-template-buffer', set as a buffer local variable.")
+  "This variable is set as a buffer local variable. 
+List of guessed modes supporting `aig-load-template-buffer'.")
 
 (defvar aig--current-buffer-template-buffer nil
-  "Boolean if the current buffer is a template buffer, set as a buffer local variable.")
+  "This variable is set as a buffer local variable. 
+Boolean if the current buffer is a template buffer.")
+
+(defvar aig--current-buffer-template nil
+  "This variable is set as a buffer local variable. 
+Holds the template structure representing an opened and loaded template buffer.
+Note: this template structure is not guaranteed to be complete, it may be that
+mode and path are valid, but hash still be nil. It is best to check each value before using them.")
 
 (defconst aig--new-template-buffer-name "*new aig template*" 
   "The name of the buffer that is created when making a new template.")
 
 (defconst aig--new-template-buffer-template
   "# name [template name]
-# [this is a sample comment]
+# [This is a comment, only hook or hook-func have to be defined]
+# [If both are defined, then both have to be satisfied to execute this template]
 # hook [hook character]
+# hook-func [hook function]
 # delim [delim regex]
 # expr [expr regex]
 #--
@@ -134,12 +145,34 @@ ie: \n (2 chars) becomes newline (1 char)"
   "Compares the key values of hash1 and hash2 using comp-fn, defaulting to equal if comp-fn was no supplied."
   (funcall (or comp-fn equal) (gethash key hash1) (gethash key hash2)))
 
-(defmacro aig--extract (type ls)
-  "From a list of packaged templates, returns a list of only `type' of each packaged template."
-  `(mapcar #',(intern (concat "aig-template-" (symbol-name type))) ,ls))
+(defun aig--make-directory-maybe (dirpath &optional parents)
+  "Prompts the user yes or no whether to create the directory at dirpath.
+If dirpath already exists, this function does nothing. The variable `parents'
+is passed directly to the parents variable in make-directory.
+
+Returns the created directory's path or nil if the user decline the creation of dirpath."
+  ;;Use file exists to check if the directory exists, if not create it
+  ;; if the directory exists, but is not writable, the make-directory will error
+  (if (file-exists-p dirpath)
+      dirpath
+    (if (yes-or-no-p (format "\"%s\" does not exists, create it?" dirpath))
+        (progn
+          (make-directory dirpath parents) ;;make the directory
+          dirpath)
+      nil))) ;;the user decline the directory's creation
 
 ;;
 ;; Utility Functions
+;;
+
+;;
+;; Macros
+;;
+(defmacro aig--extract (type ls)
+  "From a list of packaged templates, returns a list of only `type' of each packaged template."
+  `(mapcar #',(intern (concat "aig-template-" (symbol-name type))) ,ls))
+;;
+;; Macros
 ;;
 
 ;;
@@ -231,7 +264,7 @@ Also, it packages other pieces of data like its file path with the template."
   (let* ((mode-contents (gethash mode aig--hash-templates-by-mode '()))
          (split-contents (split-string contents "\n"))
          (parsed-template (aig--parse-template split-contents))
-         (packaged-template (make-aig-template :hash parsed-template :path path)))
+         (packaged-template (make-aig-template :hash parsed-template :path path :loaded-mode mode)))
     ;;Add to the mode by removing any templates with the same name and replacing them with the new one
     ;; the list mode-contents is a list of packaged templates, only the hashes need to be compared in the lambda
     (puthash mode (cons packaged-template
@@ -484,13 +517,14 @@ input a choice that is not in choices."
 ;;
 ;; User Interactive Functions
 ;;
-(defun aig--init-template-buffer (mode)
+(defun aig--init-template-buffer (mode buffer-template)
   "Sets up the current buffer to be a template buffer with the suggested mode as `mode'."
   ;;set up the buffer local variables
   (setq-local aig--guessed-modes (list (symbol-name mode)))
   (setq-local aig--current-buffer-template-buffer t)
+  (setq-local aig--current-buffer-template buffer-template)
   
-  ;;enable aig--template-mode in the new template buffer
+  ;;enable aig--template-mode in the new template buffer for key-bindings and other functionalities
   (aig--template-mode 1))
 
 (defun aig-new-template ()
@@ -502,19 +536,21 @@ input a choice that is not in choices."
     (switch-to-buffer-other-window (generate-new-buffer aig--new-template-buffer-name))
 
     ;;Set up this current buffer as a template buffer with mode as the suggested mode for loading
-    (aig--init-template-buffer mode)
+    ;; since this is a new template, no buffer-template can be specified
+    (aig--init-template-buffer mode nil)
 
     ;;Insert the starter template into the new template buffer
     (insert aig--new-template-buffer-template)))
 
-(defun aig-load-template-buffer ()
-  "Loads the current template buffer into a selected mode."
+(defun aig-load-template-buffer (&optional mode)
+  "Loads the current template buffer into a mode.
+If mode is not provided, this function prompts the user."
   (interactive)
 
   ;;Basic sanity check, if the current buffer is a template buffer, then load it
   (if aig--current-buffer-template-buffer
-      (let ((selected-mode (aig-prompt "Select mode to load into: " aig--guessed-modes)))
-        ;;If mode is nil, that means most likely C-g was used to exit, so exit doing nothing
+      (let ((selected-mode (or mode (aig-prompt "Select mode to load into: " aig--guessed-modes))))
+        ;;If `selected-mode' is nil, that means most likely C-g was used to exit, so exit doing nothing
         (if selected-mode
             ;;load the visible buffer into selected-mode, since this is only loading
             ;; no path can be supplied to aig--load-template-from-contents as a file path does not exist
@@ -536,10 +572,11 @@ each directory within the list `aig-template-dirs'."
     ;;Use aig--load-templates-from-dirs* as it handles errors internally
     (aig--load-templates-from-dirs* (list dir))))
 
-(defun aig--switch-to-template-buffer (filepath)
-  "Switches to the template buffer `filepath' if it is already opened, if not, it opens
-the file at `filepath' and initializes the buffer as a template buffer."
-  (let ((opened-buffer (get-file-buffer filepath)))
+(defun aig--switch-to-template-buffer (template)
+  "Switches to the template buffer of `template' if it is already opened, if not, it opens
+the file of `template' and initializes the buffer as a template buffer."
+  (let* ((filepath (aig-template-path template))
+         (opened-buffer (get-file-buffer filepath)))
     ;;If the filepath is opened in a buffer, just switch to it, else
     ;; read and load the path as a new template buffer
     (if opened-buffer
@@ -548,8 +585,13 @@ the file at `filepath' and initializes the buffer as a template buffer."
         ;;Open the file in the other window
         (find-file-other-window filepath)
         
+        ;TODO: Check if when coping, the hash table does not point to the same object or if it
+        ;; also gets copied
+
         ;;Set up this current buffer as a template buffer with mode as the suggested mode for loading
-        (aig--init-template-buffer mode)))))
+        ;; copy the template and its contents because it is not desirable to have the
+        ;; buffer template variable point directly to a loaded template
+        (aig--init-template-buffer mode (copy-aig-template template))))))
 
 (defun aig-visit-template-file ()
   "Opens a template file loaded in the current major mode for editing."
@@ -570,14 +612,66 @@ the file at `filepath' and initializes the buffer as a template buffer."
       ;;If selected-template-name is nil, that means most likely C-g was activated, so do nothing
       (if selected-template-name
           ;;At the same index the selected-template-name is in template-names, the selected packaged template is
-          ;; in the loaded-template, then just get the path string from that selected-template
-          (let* ((selected-template (nth (cl-position selected-template-name template-names :test #'string=)
-                                         loaded-templates)) 
-                 (selected-template-path (aig-template-path selected-template)))
-            ;;Once there is a selected path, let aig--switch-to-template-buffer handle the file
+          ;; in the loaded-template
+          (let ((selected-template (nth (cl-position selected-template-name template-names :test #'string=)
+                                         loaded-templates))) 
+            ;;aig--switch-to-template-buffer will then handle the file
             ;; opening and initializing the buffer as a template buffer
-            (aig--switch-to-template-buffer selected-template-path))
+            (aig--switch-to-template-buffer selected-template))
         nil)))
+
+(defun aig-load-save-close-template-buffer ()
+  "This function loads the current buffer as a template buffer, saves it, prompting for a path
+and creating mode directories as needed if the current template buffer does not have a path
+attributed. After the loading processes passed, it then closes the buffer."
+  (interactive)
+
+    ;;Basic sanity check, if the current buffer is a template buffer
+  (when aig--current-buffer-template-buffer
+      ;;If the current template buffer already has a filepath and mode, just load the template, save, and close
+      ;; usually aig--current-buffer-template is this full if it is a visited template
+      (if (and aig--current-buffer-template 
+               (aig-template-path aig--current-buffer-template)
+               (aig-template-loaded-mode aig--current-buffer-template))
+          (progn
+            ;;load
+            (aig-load-template-buffer (aig-template-loaded-mode aig--current-buffer-template))
+            ;;save
+            (set-visited-file-name (aig-template-path aig--current-buffer-template))
+            (save-buffer 0) ;;save without backups
+            ;;close
+            (kill-buffer))
+        (progn ;;prompt the user for where to save, load it to that location, save, and close
+          ;;lexical scope flet for safety
+          (cl-flet 
+              ((get-save-dir (mode)
+                             "Returns the path to the directory to save the template buffer or nil to exit."
+                             (let ((selected-root (aig-prompt "Select a root directory to save into: " 
+                                                              aig-template-dirs)))
+                               ;;most likely C-g was hit to exit or the dirpath creation failed
+                               ;; to cause this to exit
+                               (when selected-root
+                                 ;;make the selected-root + mode path if needed, prompting the user
+                                 ;; before its creation, make any parent dirs as needed
+                                 (aig--make-directory-maybe (concat (file-name-as-directory selected-root) mode) 
+                                                            t)))))
+            
+            ;;Sequentially prompt the user for information, if one of the function fails or the user
+            ;; hits C-g to exit, its value will be set to nil and all following variables will 
+            ;; be automatically set to nil also
+            (let* ((selected-mode (aig-prompt "Select mode to load into: " aig--guessed-modes))
+                   (dirpath (when selected-mode (get-save-dir selected-mode)))
+                   (save-as (when dirpath (aig-prompt "Save template as: " '()))))
+              ;;if save as is defined, that means all of the other variables defined before it
+              ;; must also be defined
+              (when save-as
+                ;;load
+                (aig-load-template-buffer selected-mode)
+                ;;save
+                (set-visited-file-name (concat (file-name-as-directory dirpath) save-as))
+                (save-buffer 0) ;;save without backups
+                ;;close
+                (kill-buffer))))))))
 
 (defun aig-about ()
   "Returns the about information for Autoinsertion Guru."
@@ -612,13 +706,22 @@ the file at `filepath' and initializes the buffer as a template buffer."
 ;; Hooks
 ;;
 
-;(char-to-string 43)
-;(read-event)
+;;
+;; Temporary calls
+;;
 
 (aig-enable-post-command-hook)
 (aig-disable-post-command-hook)
 
-(aig--load-templates-from-dirs '("."))
+(setq aig-template-dirs
+      (cons "/home/damian/bin/ELisp_files/autoinsertion_guru/sample-modes"
+            (remove "/home/damian/bin/ELisp_files/autoinsertion_guru/sample-modes"
+                    aig-template-dirs)))
+(aig--load-templates-from-dirs* '("/home/damian/bin/ELisp_files/autoinsertion_guru/sample-modes"))
+
+;;
+;; Temporary calls
+;;
 
 ;;Provide that this extension was loaded
 (provide 'autoinsertion-guru)

@@ -115,6 +115,7 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
 (defvar aig--template-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c a l") #'aig-load-template-buffer)
+    (define-key map (kbd "C-c a c") #'aig-load-save-close-template-buffer)
     map)
   "The keymap used when `aig--template-mode-map' is active.")
 
@@ -134,7 +135,6 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
   (if (and aig--template-mode (not aig--current-buffer-template-buffer))
       (aig--template-mode -1) ;;disable the mode
     nil))
-
 ;;
 ;; Template Buffer Mode
 ;;
@@ -152,6 +152,8 @@ Autoinsertion Guru in that buffer. Functions should take 0 arguments.")
     "----"
     ["Load template..." aig-load-template-buffer
      :help "Loads the active buffer as a template buffer"]
+    ["Save template..." aig-load-save-close-template-buffer
+     :help "Loads, saves, and closes the active buffer as a template buffer"]
     "----"
     ,aig--selection-prompting-method
     "----"
