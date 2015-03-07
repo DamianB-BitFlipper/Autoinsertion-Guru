@@ -1,0 +1,11 @@
+# name [add arrow]
+# [This is a comment, only hook or hook-func have to be defined]
+# [If both are defined, then both have to be satisfied to execute this template]
+# hook [-]
+# hook-func [self-insert-command]
+# delim [\n]
+# expr [.+::.+$]
+#--
+;;Delete the -
+(delete-backward-char 1)
+(insert " -> ")
